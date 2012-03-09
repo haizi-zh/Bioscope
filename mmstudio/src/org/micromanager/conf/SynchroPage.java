@@ -28,9 +28,11 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.Vector;
 import java.util.prefs.Preferences;
+
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JScrollPane;
 import javax.swing.ListSelectionModel;
 import javax.swing.border.LineBorder;
 
@@ -39,7 +41,7 @@ import javax.swing.border.LineBorder;
  *
  */
 public class SynchroPage extends PagePanel {
-   
+   private static final long serialVersionUID = 1L;
    private JList deviceList_;
    private JList synchroList_;
    private Device[] availableDevices_;
@@ -66,9 +68,14 @@ public class SynchroPage extends PagePanel {
       
       deviceList_ = new JList();
       deviceList_.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-      deviceList_.setBorder(new LineBorder(Color.black, 1, false));
-      deviceList_.setBounds(280, 33, 164, 244);
-      add(deviceList_);
+
+      JScrollPane scrollPane = new JScrollPane();
+      scrollPane.setBounds(320, 33, 164, 244);
+
+      scrollPane.getViewport().setView(deviceList_);
+
+
+      add(scrollPane);
       
       final JButton button = new JButton();
       button.addActionListener(new ActionListener() {
@@ -80,7 +87,7 @@ public class SynchroPage extends PagePanel {
          }
       });
       button.setText("<< Add");
-      button.setBounds(181, 108, 93, 23);
+      button.setBounds(181, 108, 133, 23);
       add(button);
       
       final JButton removeButton = new JButton();
@@ -93,7 +100,7 @@ public class SynchroPage extends PagePanel {
          }
       });
       removeButton.setText("Remove >>");
-      removeButton.setBounds(181, 137, 93, 23);
+      removeButton.setBounds(181, 137, 133, 23);
       add(removeButton);
       
       final JLabel synchronizedDevicesLabel = new JLabel();
@@ -102,22 +109,22 @@ public class SynchroPage extends PagePanel {
       add(synchronizedDevicesLabel);
       
       final JLabel availabledevicesLabel = new JLabel();
-      availabledevicesLabel.setText("AvailableDevices");
-      availabledevicesLabel.setBounds(280, 13, 162, 14);
+      availabledevicesLabel.setText("Available Devices");
+      availabledevicesLabel.setBounds(320, 13, 172, 14);
       add(availabledevicesLabel);
       //
    }
    
    public boolean enterPage(boolean next) {
       String synchro[] = model_.getSynchroList(); 
-      Vector synchroData = new Vector();
+      Vector<String> synchroData = new Vector<String>();
       for (int i=0; i<synchro.length; i++)
          synchroData.add(synchro[i]);
       
       synchroList_.setListData(synchroData);
       
       availableDevices_ = model_.getDevices();
-      Vector listData = new Vector();
+      Vector<String> listData = new Vector<String>();
       for (int i=0; i<availableDevices_.length; i++)
          if (!isInSynchroList(availableDevices_[i].getName()) && !availableDevices_[i].isCore() && !availableDevices_[i].isCamera())
             listData.add(availableDevices_[i].getName());
@@ -157,14 +164,14 @@ public class SynchroPage extends PagePanel {
    
    private void addSynchro(String name) {
       // add to synchro list
-      Vector data = new Vector();
+      Vector<Object> data = new Vector<Object>();
       for (int i=0; i<synchroList_.getModel().getSize(); i++)
          data.add(synchroList_.getModel().getElementAt(i));
       data.add(name);
       synchroList_.setListData(data);     
       
       // remove from device list
-      Vector devData = new Vector();
+      Vector<Object> devData = new Vector<Object>();
       for (int i=0; i<deviceList_.getModel().getSize(); i++)
          if (name.compareTo((String)deviceList_.getModel().getElementAt(i)) != 0)
             devData.add(deviceList_.getModel().getElementAt(i));
@@ -173,14 +180,14 @@ public class SynchroPage extends PagePanel {
    
    private void removeSynchro(String name) {
       // add to synchro list
-      Vector data = new Vector();
+      Vector<Object> data = new Vector<Object>();
       for (int i=0; i<deviceList_.getModel().getSize(); i++)
          data.add(deviceList_.getModel().getElementAt(i));
       data.add(name);
       deviceList_.setListData(data);     
       
       // remove from device list
-      Vector syncData = new Vector();
+      Vector<Object> syncData = new Vector<Object>();
       for (int i=0; i<synchroList_.getModel().getSize(); i++)
          if (name.compareTo((String)synchroList_.getModel().getElementAt(i)) != 0)
             syncData.add(synchroList_.getModel().getElementAt(i));

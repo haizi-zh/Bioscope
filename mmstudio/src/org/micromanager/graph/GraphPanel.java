@@ -22,17 +22,30 @@
 // CVS:          $Id$
 //
 package org.micromanager.graph;
-import java.awt.*;
-import javax.swing.*;
-import java.awt.geom.*;
-import java.text.*;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Paint;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Stroke;
+import java.awt.geom.GeneralPath;
+import java.awt.geom.Line2D;
+import java.awt.geom.Point2D;
+import java.text.DecimalFormat;
+
+import javax.swing.JPanel;
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * XY graph view. 
  */
 public class GraphPanel extends JPanel {
+   private static final long serialVersionUID = -1280955888510181945L;
    private GraphData data_;
-   private GraphData.Bounds bounds_;
+   protected GraphData.Bounds bounds_;
    
    private float xMargin_   = 50;
    private float yMargin_   = 50;
@@ -44,18 +57,32 @@ public class GraphPanel extends JPanel {
    
    float cursorLoPos_;
    float cursorHiPos_;
+   double gamma_;
+   
+   private boolean fillTrace_ = false;
+   private Color traceColor_ = Color.black;
    
    public GraphPanel() {
       data_ = new GraphData();
       setAutoBounds();
       cursorLoPos_ = (float)bounds_.xMin;
       cursorHiPos_ = (float)bounds_.xMax;
+      gamma_ = 1.0;
    }
    
    public void setData(GraphData d) {
       data_ = d;
    }
-   
+
+   public void setGamma(double gamma) {
+      gamma_ = gamma;
+   }
+
+   public void setTraceStyle(boolean fillTrace, Color color) {
+      fillTrace_ = fillTrace;
+      traceColor_ = color;
+   }
+ 
    public void setAutoBounds(){
       bounds_ = data_.getBounds();
       AdjustCursors();
@@ -66,9 +93,10 @@ public class GraphPanel extends JPanel {
       yMargin_ = y;
    }
    
-   public void setCursors(double low, double high) {
+   public void setCursors(double low, double high, double gamma) {
       cursorLoPos_ = (float)low;
-      cursorHiPos_ = (float)high;     
+      cursorHiPos_ = (float)high;
+      gamma_ = gamma;
    }
    
    public void setTextVisible(boolean state) {
@@ -96,7 +124,9 @@ public class GraphPanel extends JPanel {
    
    private void AdjustCursors() {
       cursorLoPos_ = Math.max(cursorLoPos_, (float) bounds_.xMin);
-      cursorHiPos_ = Math.min(cursorHiPos_, (float) bounds_.xMax);      
+//      cursorHiPos_ = Math.min(cursorHiPos_, (float) bounds_.xMax);
+      //took this line out so contrast line can have an endpoint beyond
+      //length of  histogram
    }
    
    /**
@@ -104,62 +134,70 @@ public class GraphPanel extends JPanel {
     * @param g
     * @param box
     */
-   private void drawGraph(Graphics2D g, Rectangle box) {
-       if (data_.getSize() < 2)
+   protected void drawGraph(Graphics2D g, Rectangle box) {
+      if (data_.getSize() < 2)
          return;
+
+      Color oldColor = g.getColor();
+      g.setColor(traceColor_);
       
       // set scaling
       float xUnit = 1.0f;
       float yUnit = 1.0f;
       
-      if (bounds_.getRangeX() <= 0.0 || bounds_.getRangeY() <= 0.0) {
-         System.out.println("Out of range " + bounds_.getRangeX() + ", " + bounds_.getRangeY());
+      // correct if Y range is zero
+      if (bounds_.getRangeY() == 0.0) {
+         if (bounds_.yMax > 0.0)
+            bounds_.yMin = 0.0;
+         else if (bounds_.yMax < 0.0) {
+            bounds_.yMax = 0.0;
+         }
+      }
+
+      // bounds can have strange values (i.e. 1e-42).  Avoid artefacts:
+      if (bounds_.getRangeX() <= 0.0 || bounds_.getRangeY() <= 1.e-10) {
          return; // invalid range data
       }
-      
+            
       xUnit = (float) (box.width / bounds_.getRangeX());
       yUnit = (float) (box.height / bounds_.getRangeY());
       
-      GeneralPath trace = new GeneralPath(GeneralPath.WIND_EVEN_ODD, data_.getSize());
-      Point2D.Float pt = getDevicePoint(data_.getPoint(0), box, xUnit, yUnit);
-      trace.moveTo(pt.x, pt.y);
-      
-      for (int i=1; i<data_.getSize(); i++){
-         pt = getDevicePoint(data_.getPoint(i), box, xUnit, yUnit);
-         trace.lineTo(pt.x, pt.y);
+      GeneralPath trace = new GeneralPath(GeneralPath.WIND_EVEN_ODD, data_.getSize() + 1);
+      // we need to start and end at y=0 to avoid strange display issues
+      Point2D.Float pt0 = getDevicePoint(new Point2D.Float(0.0f, 0.0f), box, xUnit, yUnit);
+      trace.moveTo(pt0.x, pt0.y);
+      Point2D.Float pt1 = getDevicePoint(new Point2D.Float(1.0f, 0.0f), box, xUnit, yUnit);
+      float halfWidth = (pt1.x - pt0.x)/2;
+      for (int i=0; i<data_.getSize(); i++){
+         Point2D.Float pt = getDevicePoint(data_.getPoint(i), box, xUnit, yUnit);
+         trace.lineTo(pt.x - halfWidth, pt.y);
+         trace.lineTo(pt.x + halfWidth, pt.y);
       }
-      
-      g.draw(trace);
+      pt0 = getDevicePoint(new Point2D.Float((float)data_.getPoint(data_.getSize()-1).getX(), 0.0f), box, xUnit, yUnit);
+      trace.lineTo(pt0.x, pt0.y);
+
+      if (fillTrace_)
+         g.fill(trace);
+      else
+         g.draw(trace);
+
+      g.setColor(oldColor);
    }
    
    public void drawCursor(Graphics2D g, Rectangle box, float xPos) {
-      // set scaling
-      float xUnit = 1.0f;
-      float yUnit = 1.0f;
-      
-      if (bounds_.getRangeX() <= 0.0 || bounds_.getRangeY() <= 0.0) {
-         System.out.println("Out of range " + bounds_.getRangeX() + ", " + bounds_.getRangeY());
-         return; // invalid range data
-      }
-      
-      xUnit = (float) (box.width / bounds_.getRangeX());
-      yUnit = (float) (box.height / bounds_.getRangeY());
+      // This should be implemented in a derived class
+   }
 
-      Point2D.Float ptPosBottom = new Point2D.Float(xPos, (float)bounds_.yMax);
-      Point2D.Float ptDevBottom = getDevicePoint(ptPosBottom, box, xUnit, yUnit);
-      Point2D.Float ptPosTop = new Point2D.Float(xPos, (float)bounds_.yMin);
-      Point2D.Float ptDevTop = getDevicePoint(ptPosTop, box, xUnit, yUnit);
-      
-      Color oldColor = g.getColor();
-      Stroke oldStroke = g.getStroke();
-      g.setColor(Color.black);
+   public void drawMapping(Graphics2D g, Rectangle box, float xStart, float xEnd, double gamma) {
+      // This should be overridden in a derived class
+   }
 
-      float dash1[] = {3.0f};
-      BasicStroke dashed = new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 3.0f, dash1, 0.0f);
-      g.setStroke(dashed);
-      g.draw(new Line2D.Float(ptDevBottom, ptDevTop));      
-      g.setColor(oldColor);
-      g.setStroke(oldStroke);
+   public Point2D.Float getDevicePointUnclippedXMax(Point2D.Float pt, Rectangle box, float xUnit, float yUnit){
+      Point2D.Float ptDev = new Point2D.Float((float)(pt.x - bounds_.xMin)*xUnit + box.x, box.height - (float)(pt.y - bounds_.yMin)*yUnit + box.y);
+      // clip the drawing region
+      ptDev.x = Math.max(ptDev.x, (float)box.x);
+      ptDev.y = Math.max(Math.min(ptDev.y, (float)box.y + box.height), (float)box.y);
+      return ptDev;
    }
    
    public Point2D.Float getDevicePoint(Point2D.Float pt, Rectangle box, float xUnit, float yUnit){
@@ -169,6 +207,14 @@ public class GraphPanel extends JPanel {
       ptDev.y = Math.max(Math.min(ptDev.y, (float)box.y + box.height), (float)box.y);
       return ptDev;
    }
+
+   public Point2D.Float getPositionPoint(int x, int y) {
+      Rectangle box = getBox();
+      Point2D.Float posPt = new Point2D.Float(
+              (float) (((x - box.x) / (float) box.width) * (bounds_.xMax - bounds_.xMin)),
+              (float) ((((box.y + box.height) - y) / (float) box.height) * (bounds_.yMax - bounds_.yMin)));
+      return posPt;
+   }
    
    /**
     * Draw grid on the graph box with tick lines and numbers.
@@ -177,14 +223,22 @@ public class GraphPanel extends JPanel {
     */
    private void drawGrid(Graphics2D g, Rectangle box) {
       if (data_.getSize() < 2) {
-         System.out.println("Invalid size " + data_.getSize());
+         ReportingUtils.logMessage("Invalid size " + data_.getSize());
          return;
       }
       
-      if (bounds_.getRangeX() <= 0.0 || bounds_.getRangeY() <= 0.0)
+      // correct if Y range is zero
+      if (bounds_.getRangeY() == 0.0) {
+         if (bounds_.yMax > 0.0)
+            bounds_.yMin = 0.0;
+         else if (bounds_.yMax < 0.0) {
+            bounds_.yMax = 0.0;
+         }
+      }
+      
+      if (bounds_.getRangeX() <= 0.0 || bounds_.getRangeY() <= 0)
       {
-         System.out.println("Out of range " + bounds_.getRangeX() + ", " + bounds_.getRangeY());
-         return; // invalid range data
+          return; // invalid range data
       }
       
       int tickCountX = 5;
@@ -195,7 +249,7 @@ public class GraphPanel extends JPanel {
       
       Color oldColor = g.getColor();
       Stroke oldStroke = g.getStroke();
-      g.setColor(Color.black);
+      g.setColor(Color.yellow);
       g.setStroke(new BasicStroke(1));
       g.draw(box);
       
@@ -225,20 +279,29 @@ public class GraphPanel extends JPanel {
       g.setColor(oldColor);
       g.setStroke(oldStroke);
    }
-   
-   public void paintComponent(Graphics g) {
-      
-      super.paintComponent(g); // JPanel draws background
-      Graphics2D  g2d = (Graphics2D) g;
-      
-      // get drawing rectangle
+
+   public Rectangle getBox() {
       Rectangle box = getBounds();
- 
       box.x = (int)xMargin_;
       box.y = (int)yMargin_;
       box.height -= 2*yMargin_;
       box.width -= 2*xMargin_;
+      return box;
+   }
+
+   @Override
+   public void paintComponent(Graphics g) {
       
+      super.paintComponent(g); // JPanel draws background
+      Graphics2D  g2d = (Graphics2D) g;
+
+       g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+
+
+      // get drawing rectangle
+      Rectangle box = getBox();
+       
       // save current settings
       Color oldColor = g2d.getColor();      
       Paint oldPaint = g2d.getPaint();
@@ -251,6 +314,7 @@ public class GraphPanel extends JPanel {
       drawGrid(g2d, box);
       drawCursor(g2d, box, cursorLoPos_);
       drawCursor(g2d, box, cursorHiPos_);
+      drawMapping(g2d, box, cursorLoPos_, cursorHiPos_, gamma_);
            
       // restore settings
       g2d.setPaint(oldPaint);

@@ -34,9 +34,16 @@
 
 const char* g_ZStageDeviceName = "ZStage";
 const char* g_TIRFShutterController = "TIRFShutter";
+const char* g_IntensiLightShutter = "IntensiLightShutter";
 const char* g_Channel_1 = "1";
 const char* g_Channel_2 = "2";
 const char* g_Channel_3 = "3";
+const char* g_Nd1 = "1";
+const char* g_Nd2 = "2";
+const char* g_Nd3 = "4";
+const char* g_Nd4 = "8";
+const char* g_Nd5 = "16";
+const char* g_Nd6 = "32";
 
 
 using namespace std;
@@ -48,6 +55,7 @@ MODULE_API void InitializeModuleData()
 {
    AddAvailableDeviceName(g_ZStageDeviceName, "Remote accessory Z-stage");
    AddAvailableDeviceName(g_TIRFShutterController, "TIRF Laser Shutter controller T-LUSU(2)");
+   AddAvailableDeviceName(g_IntensiLightShutter, "IntensiLight Shutter");
 }
 
 MODULE_API MM::Device* CreateDevice(const char* deviceName)
@@ -65,6 +73,11 @@ MODULE_API MM::Device* CreateDevice(const char* deviceName)
       TIRFShutter* s = new TIRFShutter();
       return s;
    }
+   if (strcmp(deviceName, g_IntensiLightShutter) == 0)
+   {
+      IntensiLightShutter* s = new IntensiLightShutter();
+      return s;
+   }
 
    return 0;
 }
@@ -74,14 +87,30 @@ MODULE_API void DeleteDevice(MM::Device* pDevice)
    delete pDevice;
 }
 
-
+// General utility function:
+int ClearPort(MM::Device& device, MM::Core& core, std::string port)
+{
+   // Clear contents of serial port 
+   const int bufSize = 255;
+   unsigned char clear[bufSize];                      
+   unsigned long read = bufSize;
+   int ret;                                                                   
+   while (read == (unsigned) bufSize) 
+   {                                                                     
+      ret = core.ReadFromSerial(&device, port.c_str(), clear, bufSize, read);
+      if (ret != DEVICE_OK)                               
+         return ret;                                               
+   }
+   return DEVICE_OK;                                                           
+} 
+ 
 
 ///////////////////////////////////////////////////////////////////////////////
 // ZStage
 
 ZStage::ZStage() :
-   initialized_(false),
    port_("Undefined"),
+   initialized_(false),
    stepSizeUm_(0.1),
    answerTimeoutMs_(1000)
 {
@@ -226,7 +255,7 @@ int ZStage::SetOrigin()
    return DEVICE_UNSUPPORTED_COMMAND;
 }
 
-int ZStage::GetLimits(double& min, double& max)
+int ZStage::GetLimits(double& /*min*/, double& /*max*/)
 {
    return DEVICE_UNSUPPORTED_COMMAND;
 }
@@ -275,11 +304,11 @@ int ZStage::OnStepSizeUm(MM::PropertyBase* pProp, MM::ActionType eAct)
 // TIRFShutter
 
 TIRFShutter::TIRFShutter() :
-   initialized_(false),
    port_("Undefined"),
    state_(0),
-   version_("Undefined"),
-   activeChannel_(g_Channel_1)
+   initialized_(false),
+   activeChannel_(g_Channel_1),
+   version_("Undefined")
 {
    InitializeDefaultErrorMessages();
                                                                              
@@ -405,7 +434,7 @@ int TIRFShutter::SetShutterPosition(bool state)
    std::string answer;                                                          
    ret = GetSerialAnswer(port_.c_str(), "\n", answer); 
    if (ret != DEVICE_OK) {
-      printf("No answer from serial port\n");
+      LogMessage("No answer from TIRF shutter");
       return ret;
    }
    
@@ -545,4 +574,430 @@ int TIRFShutter::OnVersion(MM::PropertyBase* pProp, MM::ActionType eAct)
    }
    return DEVICE_OK;
 }
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// IntensiLightShutter
+
+IntensiLightShutter::IntensiLightShutter() :
+   initialized_(false),
+   port_("Undefined"),
+   state_(0),
+   version_("Undefined")
+{
+   InitializeDefaultErrorMessages();
+                                                                             
+   // create pre-initialization properties                                   
+   // ------------------------------------                                   
+                                                                             
+   // Name                                                                   
+   CreateProperty(MM::g_Keyword_Name, g_IntensiLightShutter, MM::String, true); 
+                                                                             
+   // Description                                                            
+   CreateProperty(MM::g_Keyword_Description, "Nikon IntensiLight Shutter adapter", MM::String, true);
+                                                                             
+   // Port                                                                   
+   CPropertyAction* pAct = new CPropertyAction (this, &IntensiLightShutter::OnPort);      
+   CreateProperty(MM::g_Keyword_Port, "Undefined", MM::String, false, pAct, true);         
+}                                                                            
+                                                                             
+IntensiLightShutter::~IntensiLightShutter()                                                            
+{                                                                            
+   Shutdown();                                                               
+} 
+
+void IntensiLightShutter::GetName(char* Name) const
+{
+   CDeviceUtils::CopyLimitedString(Name, g_IntensiLightShutter);
+}  
+
+int IntensiLightShutter::Initialize()
+{
+   if (initialized_)
+      return DEVICE_OK;
+      
+   // get the version number
+   CPropertyAction* pAct = new CPropertyAction(this,&IntensiLightShutter::OnVersion);
+
+   // If GetVersion fails we are not talking to the IntensiLight
+   int ret = GetVersion();
+   if (ret != DEVICE_OK)                                                     
+      return ret;                                                            
+
+   ret = CreateProperty("Version", version_.c_str(), MM::String,true,pAct); 
+
+   // State
+   // -----
+   pAct = new CPropertyAction (this, &IntensiLightShutter::OnState);
+   ret = CreateProperty(MM::g_Keyword_State, "0", MM::Integer, false, pAct);
+   if (ret != DEVICE_OK)
+      return ret;                                                            
+                                                                             
+   AddAllowedValue(MM::g_Keyword_State, "0");                                
+   AddAllowedValue(MM::g_Keyword_State, "1");                                
+                                              
+
+   pAct = new CPropertyAction(this, &IntensiLightShutter::OnND);
+   ret = CreateProperty("ND", g_Nd1, MM::String, false, pAct);
+   if (ret != DEVICE_OK)
+      return ret;
+
+   AddAllowedValue("ND", g_Nd1);
+   AddAllowedValue("ND", g_Nd2);
+   AddAllowedValue("ND", g_Nd3);
+   AddAllowedValue("ND", g_Nd4);
+   AddAllowedValue("ND", g_Nd5);
+   AddAllowedValue("ND", g_Nd6);
+
+   // switch all channels off on startup instead of querying which on is open
+   // SetProperty(MM::g_Keyword_State, "0");
+
+   // ret = UpdateStatus();                                                 
+   // if (ret != DEVICE_OK)                                                     
+   //   return ret;                                                            
+                                                                             
+   initialized_ = true;                                                      
+   return DEVICE_OK;                                                         
+}  
+
+int IntensiLightShutter::SetOpen(bool open)
+{  
+   long pos;
+   if (open)
+      pos = 1;
+   else
+      pos = 0;
+   return SetProperty(MM::g_Keyword_State, CDeviceUtils::ConvertToString(pos));
+} 
+
+int IntensiLightShutter::GetOpen(bool& open)
+{     
+   char buf[MM::MaxStrLength];
+   int ret = GetProperty(MM::g_Keyword_State, buf);
+   if (ret != DEVICE_OK)                                                     
+      return ret;                                                            
+   long pos = atol(buf);                                                     
+   pos == 1 ? open = true : open = false;                                    
+   return DEVICE_OK;                                                         
+} 
+
+/**
+ * Here we set the shutter to open or close
+ * Note, we send a command that does not evoke a 'received command' response.
+ * However, we do wait until the action is completed
+ * This might not be the most optimal way of doing this, so change when you see a better way
+ */
+int IntensiLightShutter::SetShutterPosition(bool state)                              
+{                                                                            
+   // empty the Rx serial buffer before sending command
+   ClearPort(*this, *GetCoreCallback(), port_.c_str());
+   std::string command;                                                    
+                                                                             
+   if (state == false) { 
+      command = "cSXC2"; // close                                                  
+   }                                                                         
+   else {                                                                      
+      command = "cSXC1"; // open                                       
+   }                                                                         
+
+   int ret = SendSerialCommand(port_.c_str(), command.c_str(), "\r");   
+   if (ret != DEVICE_OK)
+      return ret;
+                                                                             
+   // block/wait for acknowledge                     
+   std::string answer;                                                          
+   ret = GetSerialAnswer(port_.c_str(), "\r\n", answer); 
+   if (ret != DEVICE_OK) {
+      LogMessage("No answer from IntensiLight");
+      return ret;
+   }
+   
+   if (answer[0]=='n') {
+      int errNo = atoi(answer.substr(4).c_str());
+      return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+   }
+
+   if (answer.substr(1,3) =="SXC") {
+      state_ = state ? 1 : 0;
+      return DEVICE_OK;
+   }
+
+
+   return DEVICE_SERIAL_INVALID_RESPONSE;
+}
+
+/**
+ *
+ */
+int IntensiLightShutter::GetShutterPosition(bool& state)                              
+{                                                                            
+   // empty the Rx serial buffer before sending command
+   ClearPort(*this, *GetCoreCallback(), port_.c_str());
+   std::string command = "rSXR";;
+
+   int ret = SendSerialCommand(port_.c_str(), command.c_str(), "\r");   
+   if (ret != DEVICE_OK)
+      return ret;
+                                                                             
+   // block/wait for acknowledge                     
+   std::string answer;                                                          
+   ret = GetSerialAnswer(port_.c_str(), "\r\n", answer); 
+   if (ret != DEVICE_OK) {
+      LogMessage("No answer from IntensiLight");
+      return ret;
+   }
+   
+   if (answer[0]=='n') {
+      int errNo = atoi(answer.substr(4).c_str());
+      return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+   }
+
+   if (answer.substr(1,3) =="SXR") {
+      state = false;
+      int nr = atoi(answer.substr(4,1).c_str());
+      if (nr == 1)
+         state = true;
+      return DEVICE_OK;
+   }
+
+   return DEVICE_SERIAL_INVALID_RESPONSE;
+}
+
+
+/**
+ * Here we set the shutter to open or close
+ * Note, we send a command that does not evoke a 'received command' response.
+ * However, we do wait until the action is completed
+ * This might not be the most optimal way of doing this, so change when you see a better way
+ */
+int IntensiLightShutter::SetND(int nd)                              
+{
+   // sanity check, this error should not occur if the rest of the code is correct
+   if (nd < 0 || nd > 6)
+      return ERR_ND_OUTOFBOUNDS;
+
+   // empty the Rx serial buffer before sending command
+   ClearPort(*this, *GetCoreCallback(), port_.c_str());
+
+   std::ostringstream command;                                                    
+   command << "cNDM" << nd;
+
+   int ret = SendSerialCommand(port_.c_str(), command.str().c_str(), "\r");   
+   if (ret != DEVICE_OK)
+      return ret;
+                                                                             
+   // block/wait for acknowledge                     
+   std::string answer;                                                          
+   ret = GetSerialAnswer(port_.c_str(), "\r\n", answer); 
+   if (ret != DEVICE_OK) {
+      LogMessage("No answer from IntensiLight");
+      return ret;
+   }
+   
+   if (answer[0]=='n') {
+      int errNo = atoi(answer.substr(4).c_str());
+      return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+   }
+
+   if (answer.substr(1,3) =="NDM") {
+      return DEVICE_OK;
+   }
+
+   return DEVICE_SERIAL_INVALID_RESPONSE;
+}
+
+/**
+ *
+ */
+int IntensiLightShutter::GetND(int& nd)                              
+{                                                                            
+   // empty the Rx serial buffer before sending command
+   ClearPort(*this, *GetCoreCallback(), port_.c_str());
+   std::string command = "rNAR";;
+
+   int ret = SendSerialCommand(port_.c_str(), command.c_str(), "\r");   
+   if (ret != DEVICE_OK)
+      return ret;
+                                                                             
+   // block/wait for acknowledge                     
+   std::string answer;                                                          
+   ret = GetSerialAnswer(port_.c_str(), "\r\n", answer); 
+   if (ret != DEVICE_OK) {
+      LogMessage("No answer from IntensiLight");
+      return ret;
+   }
+   
+   if (answer[0]=='n') {
+      int errNo = atoi(answer.substr(4).c_str());
+      return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+   }
+
+   if (answer.substr(1,3) =="NAR") {
+      nd = atoi(answer.substr(4).c_str());
+      return DEVICE_OK;
+   }
+
+   return DEVICE_SERIAL_INVALID_RESPONSE;
+}
+
+int IntensiLightShutter::GetVersion()
+{
+   std::string command = "rVEN";
+   int ret = SendSerialCommand(port_.c_str(), command.c_str(), "\r");
+   if (ret != DEVICE_OK)
+      return ret;
+                                                                             
+   // block/wait for acknowledge                     
+   std::string answer;
+   ret = GetSerialAnswer(port_.c_str(), "\r\n", answer);
+   if (ret != DEVICE_OK)
+      return ret;
+
+   if (answer[0]== 'a') 
+   {
+      version_ = answer.substr(4,5);
+      return DEVICE_OK;
+   }
+   else if (answer[0] =='n') 
+   {
+      int errNo = atoi(answer.substr(4).c_str());
+      return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+   }
+   // if this fails, repeat once to deal with slow starting serial ports
+   else {
+      ret = SendSerialCommand(port_.c_str(), command.c_str(), "\r");
+      if (ret != DEVICE_OK)
+         return ret;
+                                                                                
+      ret = GetSerialAnswer(port_.c_str(), "\r\n", answer);
+      if (ret != DEVICE_OK)
+         return ret;
+
+      if (answer[0]== 'a') 
+      {
+         version_ = answer.substr(4,5);
+         return DEVICE_OK;
+      }
+      else if (answer[0] =='n') 
+      {
+         int errNo = atoi(answer.substr(4).c_str());
+         return ERR_INTENSILIGHTSHUTTER_OFFSET + errNo;
+      }
+   }
+
+   return DEVICE_SERIAL_INVALID_RESPONSE;
+}
+
+
+int IntensiLightShutter::Shutdown()                                                
+{                                                                            
+   if (initialized_)                                                         
+   {                                                                         
+      initialized_ = false;                                                  
+   }                                                                         
+   return DEVICE_OK;                                                         
+}                                                                            
+
+// Never busy because all commands block
+bool IntensiLightShutter::Busy()
+{
+   return false;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Action handlers
+///////////////////////////////////////////////////////////////////////////////
+/*
+ * Sets the Serial Port to be used.
+ * Should be called before initialization
+ */
+int IntensiLightShutter::OnPort(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      pProp->Set(port_.c_str());
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      if (initialized_)
+      {
+         // revert
+         pProp->Set(port_.c_str());
+         return ERR_PORT_CHANGE_FORBIDDEN;
+      }
+                                                                             
+      pProp->Get(port_);                                                     
+   }                                                                         
+   return DEVICE_OK;     
+}
+
+int IntensiLightShutter::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet) {
+      bool state;
+      int ret = GetShutterPosition(state);
+      if (ret != DEVICE_OK)
+         return ret;
+
+      pProp->Set(state ? 1l : 0l);                                                          
+   }                                                                         
+   else if (eAct == MM::AfterSet) {
+      long pos;
+      pProp->Get(pos);
+
+      return SetShutterPosition(pos == 0 ? false : true);
+   }
+   return DEVICE_OK;
+}
+
+ 
+int IntensiLightShutter::OnVersion(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet && version_ == "Undefined") {
+      int ret = GetVersion();
+      if (ret != DEVICE_OK) 
+         return ret;
+      pProp->Set(version_.c_str());
+   }
+   return DEVICE_OK;
+}
+
+int IntensiLightShutter::OnND(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet) {
+      int nd;
+      int ret = GetND(nd);
+      if (ret != DEVICE_OK)
+         return ret;
+      std::string ndMessage;
+      switch (nd) { 
+         case 1: ndMessage = g_Nd1; break;
+         case 2: ndMessage = g_Nd2; break;
+         case 3: ndMessage = g_Nd3; break;
+         case 4: ndMessage = g_Nd4; break;
+         case 5: ndMessage = g_Nd5; break;
+         case 6: ndMessage = g_Nd6; break;
+      }
+      pProp->Set(ndMessage.c_str());
+   } else if (eAct == MM::AfterSet) {
+      std::string  ndMessage;
+      int nd = 1;
+      pProp->Get(ndMessage);
+      if (ndMessage == g_Nd2) 
+         nd = 2;
+      if (ndMessage == g_Nd3) 
+         nd = 3;
+      if (ndMessage == g_Nd4) 
+         nd = 4;
+      if (ndMessage == g_Nd5) 
+         nd = 5;
+      if (ndMessage == g_Nd6) 
+         nd = 6;
+      return SetND(nd);
+   }
+
+   return DEVICE_OK;
+}
+
 

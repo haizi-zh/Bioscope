@@ -37,6 +37,7 @@
 #define ERR_WRITE_FAILED 103
 #define ERR_CLOSE_FAILED 104
 #define ERR_BOARD_NOT_FOUND 105
+#define DEVICE_RANGE_EXCEEDED 106
 
 class CDTOLShutter : public CShutterBase<CDTOLShutter>  
 {
@@ -99,7 +100,7 @@ private:
    long numPos_;
 };
 
-class CDTOLDA : public CGenericBase<CDTOLDA>  
+class CDTOLDA : public CSignalIOBase<CDTOLDA>  
 {
 public:
    CDTOLDA(unsigned channel, const char* name);
@@ -112,22 +113,36 @@ public:
   
    void GetName(char* pszName) const;
    bool Busy() {return busy_;}
-   
+
+   int SetGateOpen(bool open) {gateOpen_ = open; return DEVICE_OK;}
+   int GetGateOpen(bool& open) {open = gateOpen_; return DEVICE_OK;}
+   int SetSignal(double volts);
+   int GetSignal(double& /*volts*/) {return DEVICE_UNSUPPORTED_COMMAND;}
+   int GetLimits(double& minVolts, double& maxVolts);
+
+   int IsDASequenceable(bool& isSequenceable) const {isSequenceable = false; return DEVICE_OK;}
+
    // action interface
    // ----------------
    int OnVolts(MM::PropertyBase* pProp, MM::ActionType eAct);
 
+
+
 private:
    int WriteToPort(long lnValue);
+   int SetVolts(double v);
 
    bool initialized_;
    bool busy_;
-   double minV_;
-   double maxV_;
+   double volts_;
+   double gatedVolts_;
    unsigned int encoding_;
    unsigned int resolution_;
    unsigned channel_;
    std::string name_;
+   bool gateOpen_;
+   double minV_;
+   double maxV_;
 };
 
 #endif //_DTOPENLAYER_H_

@@ -23,87 +23,38 @@
 // CVS:           $Id$
 //
 
-#ifndef _CORE_UTILS_H_
-#define _CORE_UTILS_H_
+#pragma once
 
-#include "ace/High_Res_Timer.h"
-#include "ace/Log_Msg.h"
+#include "../MMDevice/MMDevice.h"
 
-#define CORE_DEBUG_PREFIX "DBG(%P, %t:) "
-#define CORE_LOG_PREFIX "LOG(%P, %t:): "
+// suppress hideous boost warnings
+#ifdef WIN32
+#pragma warning( push )
+#pragma warning( disable : 4244 )
+#pragma warning( disable : 4127 )
+#endif
 
-#define CORE_DEBUG(FMT)                         ACE_DEBUG((LM_DEBUG, CORE_DEBUG_PREFIX FMT))
-#define CORE_DEBUG1(FMT, arg1)                  ACE_DEBUG((LM_DEBUG, CORE_DEBUG_PREFIX FMT, arg1))
-#define CORE_DEBUG2(FMT, arg1, arg2)            ACE_DEBUG((LM_DEBUG, CORE_DEBUG_PREFIX FMT, arg1, arg2))
-#define CORE_DEBUG3(FMT, arg1, arg2, arg3)      ACE_DEBUG((LM_DEBUG, CORE_DEBUG_PREFIX FMT, arg1, arg2, arg3))
-#define CORE_DEBUG4(FMT, arg1, arg2, arg3, arg4) ACE_DEBUG((LM_DEBUG, CORE_DEBUG_PREFIX FMT, arg1, arg2, arg3, arg4))
+#include "boost/date_time/posix_time/posix_time.hpp"
 
-#define CORE_LOG(FMT)                           ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX FMT))
-#define CORE_LOG1(FMT, arg1)                    ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX FMT, arg1))
-#define CORE_LOG2(FMT, arg1, arg2)              ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX FMT, arg1, arg2))
-#define CORE_LOG3(FMT, arg1, arg2, arg3)        ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX FMT, arg1, arg2, arg3))
-#define CORE_LOG4(FMT, arg1, arg2, arg3, arg4)  ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX FMT, arg1, arg2, arg3, arg4))
-#define CORE_TIMESTAMP()                        ACE_DEBUG((LM_INFO, CORE_LOG_PREFIX "%D\n"))
+#ifdef WIN32
+#pragma warning( pop )
+#endif
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Utility classes
 // ---------------
 
-class TimeoutMs
+
+
+//NB we are starting the 'epoch' on 2000 01 01
+inline MM::MMTime GetMMTimeNow()
 {
-public:
-   TimeoutMs(double intervalMs) : intervalMs_(intervalMs), timer_(0)
-   {
-      timer_ = new ACE_High_Res_Timer();
-      startTime_ = timer_->gettimeofday();
-   }
-   ~TimeoutMs()
-   {
-      delete timer_;
-   }
-   bool expired()
-   {
-      ACE_Time_Value elapsed = timer_->gettimeofday() - startTime_;
-      //CORE_DEBUG2("Elapsed=%d, limit=%d\n", elapsed.usec()/1000, (long)intervalMs_);
-      double elapsedMs = elapsed.sec() * 1000 + elapsed.usec() / 1000;
-      if (elapsedMs > intervalMs_)
-         return true;
-      else
-         return false;
-   }
-
-private:
-   TimeoutMs(const TimeoutMs&) {}
-   const TimeoutMs& operator=(const TimeoutMs&) {}
-
-   ACE_High_Res_Timer* timer_;
-   ACE_Time_Value startTime_;
-   double intervalMs_;
-};
-
-class TimerMs
-{
-public:
-   TimerMs()
-   {
-      startTime_ = timer_.gettimeofday();
-   }
-   ~TimerMs()
-   {
-   }
-   double elapsed()
-   {
-      ACE_Time_Value elapsed = timer_.gettimeofday() - startTime_;
-      return elapsed.sec() * 1000 + elapsed.usec() / 1000;
-   }
-
-private:
-   TimerMs(const TimeoutMs&) {}
-   const TimerMs& operator=(const TimeoutMs&) {}
-
-   ACE_High_Res_Timer timer_;
-   ACE_Time_Value startTime_;
-};
-
-#endif // _CORE_UTILS_H_
+   using namespace boost::posix_time;
+   using namespace boost::gregorian;
+   boost::posix_time::ptime t0 = boost::posix_time::microsec_clock::local_time();
+   ptime timet_start(date(2000,1,1)); 
+   time_duration diff = t0 - timet_start; 
+   return MM::MMTime( (double) diff.total_microseconds());
+}
 

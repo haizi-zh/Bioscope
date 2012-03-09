@@ -30,17 +30,18 @@ import java.util.prefs.Preferences;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
-import javax.swing.JFileChooser;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
+import org.micromanager.MMStudioMainFrame;
 
-import org.micromanager.utils.CfgFileFilter;
+import org.micromanager.utils.FileDialogs;
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * The first page of the Configuration Wizard.
  */
 public class IntroPage extends PagePanel {
-
+   private static final long serialVersionUID = 1L;
    private ButtonGroup buttonGroup = new ButtonGroup();
    private JTextField filePathField_;
    private boolean initialized_ = false;
@@ -101,7 +102,7 @@ public class IntroPage extends PagePanel {
          }
       });
       browseButton_.setText("Browse...");
-      browseButton_.setBounds(440, 82, 48, 23);
+      browseButton_.setBounds(440, 82, 100, 23);
       add(browseButton_);
       
       createNewRadioButton_.setSelected(true);
@@ -139,7 +140,7 @@ public class IntroPage extends PagePanel {
          try {
             model_.loadFromFile(filePathField_.getText());
          } catch (MMConfigFileException e) {
-            handleError(e.getMessage());
+            ReportingUtils.showError(e);
             model_.reset();
             return false;
          }
@@ -153,13 +154,10 @@ public class IntroPage extends PagePanel {
    }
    
    private void loadConfiguration() {
-      JFileChooser fc = new JFileChooser();
-      fc.addChoosableFileFilter(new CfgFileFilter());
-      fc.setSelectedFile(new File(filePathField_.getText()));
-      int retVal = fc.showOpenDialog(this);
-      if (retVal == JFileChooser.APPROVE_OPTION) {
-         File f = fc.getSelectedFile();
-         filePathField_.setText(f.getAbsolutePath());
-      }
+      File f = FileDialogs.openFile(parent_, "Choose a config file",
+              MMStudioMainFrame.MM_CONFIG_FILE);
+      if (f == null)
+         return;
+      filePathField_.setText(f.getAbsolutePath());
    }
 }

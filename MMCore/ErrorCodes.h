@@ -30,7 +30,7 @@
 #define MMERR_GENERIC                  1 // unspecified error
 #define MMERR_NoDevice                 2
 #define MMERR_SetPropertyFailed        3
-#define MMERR_LibaryFunctionNotFound   4
+#define MMERR_LibraryFunctionNotFound  4
 #define MMERR_ModuleVersionMismatch    5
 #define MMERR_DeviceVersionMismatch    6
 #define MMERR_UnknownModule            7
@@ -65,5 +65,15 @@
 #define MMERR_CameraBufferReadFailed   37
 #define MMERR_DuplicateConfigGroup     38
 #define MMERR_InvalidConfigurationFile 39
-
+#define MMERR_CircularBufferFailedToInitialize 40
+#define MMERR_CircularBufferEmpty      41
+#define MMERR_ContFocusNotAvailable    42
+#define MMERR_AutoFocusNotAvailable    43
+#define MMERR_BadConfigName            44
+#define MMERR_CircularBufferIncompatibleImage  45
+#define MMERR_NotAllowedDuringSequenceAcquisition  46
+#define MMERR_OutOfMemory					47
+#define MMERR_InvalidImageSequence 48
+#define MMERR_NullPointerException 49
+#define MMERR_CreatePeripheralFailed 50
 #endif //_ERRORCODES_H_

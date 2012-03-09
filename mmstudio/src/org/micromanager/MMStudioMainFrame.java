@@ -3,57 +3,60 @@
 //PROJECT:       Micro-Manager
 //SUBSYSTEM:     mmstudio
 //-----------------------------------------------------------------------------
-//
-// AUTHOR:       Nenad Amodaj, nenad@amodaj.com, Jul 18, 2005
-//
-// COPYRIGHT:    University of California, San Francisco, 2006
-//
-// LICENSE:      This file is distributed under the BSD license.
+//AUTHOR:        Nenad Amodaj, nenad@amodaj.com, Jul 18, 2005
+//               Modifications by Arthur Edelstein, Nico Stuurman
+//COPYRIGHT:     University of California, San Francisco, 2006-2010
+//               100X Imaging Inc, www.100ximaging.com, 2008
+//LICENSE:       This file is distributed under the BSD license.
 //               License text is included with the source distribution.
-//
 //               This file is distributed in the hope that it will be useful,
 //               but WITHOUT ANY WARRANTY; without even the implied warranty
 //               of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//
 //               IN NO EVENT SHALL THE COPYRIGHT OWNER OR
 //               CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
 //               INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
+//CVS:          $Id$
 //
-// CVS:          $Id$
-
 package org.micromanager;
 
+import ij.IJ;
+import ij.ImageJ;
 import ij.ImagePlus;
+import ij.WindowManager;
 import ij.gui.Line;
 import ij.gui.Roi;
-import ij.process.ByteProcessor;
 import ij.process.ImageProcessor;
-import ij.process.ImageStatistics;
 import ij.process.ShortProcessor;
 
-import bsh.EvalError;
-import bsh.Interpreter;
-
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
-import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.event.WindowListener;
+import java.awt.geom.Point2D;
 
 import java.io.File;
 import java.io.IOException;
+
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.prefs.Preferences;
+import java.util.Timer;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -64,135 +67,710 @@ import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.SpringLayout;
 import javax.swing.SwingConstants;
-import javax.swing.Timer;
+import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
-import javax.swing.border.LineBorder;
+import javax.swing.event.AncestorEvent;
 
 import mmcorej.CMMCore;
+import mmcorej.DeviceType;
 import mmcorej.MMCoreJ;
+import mmcorej.MMEventCallback;
+import mmcorej.Metadata;
 import mmcorej.StrVector;
 
+import org.json.JSONObject;
+import org.micromanager.acquisition.AcquisitionManager;
+import org.micromanager.api.ImageCache;
+import org.micromanager.api.ImageCacheListener;
+import org.micromanager.acquisition.MMImageCache;
+import org.micromanager.api.AcquisitionEngine;
+import org.micromanager.api.Autofocus;
+import org.micromanager.api.MMPlugin;
+import org.micromanager.api.ScriptInterface;
+import org.micromanager.api.MMListenerInterface;
+import org.micromanager.conf2.ConfiguratorDlg2;
 import org.micromanager.conf.ConfiguratorDlg;
 import org.micromanager.conf.MMConfigFileException;
 import org.micromanager.conf.MicroscopeModel;
-import org.micromanager.graph.ContrastPanel;
 import org.micromanager.graph.GraphData;
 import org.micromanager.graph.GraphFrame;
-import org.micromanager.graph.HistogramFrame;
-import org.micromanager.image5d.ChannelCalibration;
-import org.micromanager.image5d.ChannelControl;
-import org.micromanager.image5d.ChannelDisplayProperties;
-import org.micromanager.image5d.Image5D;
-import org.micromanager.image5d.Image5DWindow;
-import org.micromanager.image5d.Image5D_Stack_to_RGB;
-import org.micromanager.image5d.Image5D_Stack_to_RGB_t;
-import org.micromanager.image5d.Image5D_to_Stack;
-import org.micromanager.image5d.Make_Montage;
-import org.micromanager.image5d.Z_Project;
-import org.micromanager.metadata.AcquisitionData;
-import org.micromanager.metadata.DisplaySettings;
-import org.micromanager.metadata.MMAcqDataException;
+import org.micromanager.navigation.CenterAndDragListener;
 import org.micromanager.navigation.PositionList;
-import org.micromanager.script.MMScriptFrame;
-import org.micromanager.utils.AcquisitionEngine;
-import org.micromanager.utils.CfgFileFilter;
+import org.micromanager.navigation.XYZKeyListener;
+import org.micromanager.navigation.ZWheelListener;
+import org.micromanager.utils.AutofocusManager;
 import org.micromanager.utils.ContrastSettings;
-import org.micromanager.utils.DeviceControlGUI;
+import org.micromanager.utils.GUIColors;
 import org.micromanager.utils.GUIUtils;
-import org.micromanager.utils.LargeMessageDlg;
-import org.micromanager.utils.MMImageWindow;
-import org.micromanager.utils.ProgressBar;
+import org.micromanager.utils.JavaUtils;
+import org.micromanager.utils.MMException;
+import org.micromanager.utils.MMScriptException;
+import org.micromanager.utils.NumberUtils;
 import org.micromanager.utils.TextUtils;
+import org.micromanager.utils.TooltipTextMaker;
 import org.micromanager.utils.WaitDialog;
 
+
+import bsh.EvalError;
+import bsh.Interpreter;
+
 import com.swtdesigner.SwingResourceManager;
+import ij.gui.ImageCanvas;
+import ij.gui.ImageWindow;
+import ij.process.FloatProcessor;
+import java.awt.Cursor;
+import java.awt.Graphics;
+import java.awt.KeyboardFocusManager;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javax.swing.BorderFactory;
+import javax.swing.JPanel;
+import javax.swing.JSeparator;
+import javax.swing.JSplitPane;
+import javax.swing.event.AncestorListener;
+import mmcorej.TaggedImage;
+import org.json.JSONException;
+import org.micromanager.acquisition.AcquisitionVirtualStack;
+
+import org.micromanager.acquisition.AcquisitionWrapperEngine;
+import org.micromanager.acquisition.LiveModeTimer;
+import org.micromanager.acquisition.MMAcquisition;
+import org.micromanager.acquisition.MetadataPanel;
+import org.micromanager.acquisition.TaggedImageStorageDiskDefault;
+import org.micromanager.acquisition.VirtualAcquisitionDisplay;
+import org.micromanager.api.DeviceControlGUI;
+import org.micromanager.utils.ImageFocusListener;
+import org.micromanager.api.Pipeline;
+import org.micromanager.api.TaggedImageStorage;
+import org.micromanager.utils.FileDialogs;
+import org.micromanager.utils.FileDialogs.FileType;
+import org.micromanager.utils.HotKeysDialog;
+import org.micromanager.utils.ImageUtils;
+import org.micromanager.utils.MDUtils;
+import org.micromanager.utils.MMKeyDispatcher;
+import org.micromanager.utils.ReportingUtils;
+import org.micromanager.utils.SnapLiveContrastSettings;
+
 
 /*
  * Main panel and application class for the MMStudio.
  */
-public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
-   public static String LIVE_WINDOW_TITLE = "AcqWindow";
-   
-   private static final String MICRO_MANAGER_TITLE = "Micro-Manager 2.0";
-   private static final String VERSION = "2.0.2";
+public class MMStudioMainFrame extends JFrame implements ScriptInterface, DeviceControlGUI {
+
+   private static final String MICRO_MANAGER_TITLE = "Micro-Manager 1.4";
+   private static final String VERSION = "1.4.7  20111110";
    private static final long serialVersionUID = 3556500289598574541L;
-   
    private static final String MAIN_FRAME_X = "x";
-   private static final String MAIN_FRAME_Y = "y";   
+   private static final String MAIN_FRAME_Y = "y";
    private static final String MAIN_FRAME_WIDTH = "width";
    private static final String MAIN_FRAME_HEIGHT = "height";
-   
+   private static final String MAIN_FRAME_DIVIDER_POS = "divider_pos";
    private static final String MAIN_EXPOSURE = "exposure";
-   private static final String MAIN_PIXEL_TYPE = "pixel_type";
    private static final String SYSTEM_CONFIG_FILE = "sysconfig_file";
-   private static final String MAIN_STRETCH_CONTRAST = "stretch_contrast";
-   
-   private static final String CONTRAST_SETTINGS_8_MIN = "contrast8_MIN";
-   private static final String CONTRAST_SETTINGS_8_MAX = "contrast8_MAX";
-   private static final String CONTRAST_SETTINGS_16_MIN = "contrast16_MIN";
-   private static final String CONTRAST_SETTINGS_16_MAX = "contrast16_MAX";
    private static final String OPEN_ACQ_DIR = "openDataDir";
-   
    private static final String SCRIPT_CORE_OBJECT = "mmc";
    private static final String SCRIPT_ACQENG_OBJECT = "acq";
-   
+   private static final String SCRIPT_GUI_OBJECT = "gui";
+   private static final String AUTOFOCUS_DEVICE = "autofocus_device";
+   private static final String MOUSE_MOVES_STAGE = "mouse_moves_stage";
+   private static final int TOOLTIP_DISPLAY_DURATION_MILLISECONDS = 15000;
+   private static final int TOOLTIP_DISPLAY_INITIAL_DELAY_MILLISECONDS = 2000;
+
+
+   // cfg file saving
+   private static final String CFGFILE_ENTRY_BASE = "CFGFileEntry"; // + {0, 1, 2, 3, 4}
    // GUI components
-   private JTextField textFieldGain_;
    private JComboBox comboBinning_;
+   private JComboBox shutterComboBox_;
    private JTextField textFieldExp_;
-   private SpringLayout springLayout_;
    private JLabel labelImageDimensions_;
    private JToggleButton toggleButtonLive_;
+   private JButton toAlbumButton_;
    private JCheckBox autoShutterCheckBox_;
-   private boolean autoShutterOrg_;
-   private boolean shutterOrg_;
    private MMOptions options_;
    private boolean runsAsPlugin_;
-   
+   private JCheckBoxMenuItem centerAndDragMenuItem_;
+   private JButton buttonSnap_;
+   private JButton buttonAutofocus_;
+   private JButton buttonAutofocusTools_;
    private JToggleButton toggleButtonShutter_;
-   private JComboBox comboPixelType_;
-   
-   // display settings
-   private ContrastSettings contrastSettings8_;
-   private ContrastSettings contrastSettings16_;
-   
-   private MMImageWindow imageWin_;
-   private HistogramFrame histWin_;
+   private GUIColors guiColors_;
    private GraphFrame profileWin_;
-   private MMScriptFrame scriptFrame_;
    private PropertyEditor propertyBrowser_;
+   private CalibrationListDlg calibrationListDlg_;
    private AcqControlDlg acqControlWin_;
+   private ReportProblemDialog reportProblemDialog_;
+   
+   private JMenu pluginMenu_;
+   private ArrayList<PluginItem> plugins_;
+   private List<MMListenerInterface> MMListeners_
+           = (List<MMListenerInterface>)
+           Collections.synchronizedList(new ArrayList<MMListenerInterface>());
+   private List<Component> MMFrames_
+           = (List<Component>)
+           Collections.synchronizedList(new ArrayList<Component>());
+   private AutofocusManager afMgr_;
    private final static String DEFAULT_CONFIG_FILE_NAME = "MMConfig_demo.cfg";
-   private final static String DEFAULT_SCRIPT_FILE_NAME = "MMStartup.bsh";
-
-   private String sysConfigFile_; 
-   private String startupScriptFile_; 
+   private ArrayList<String> MRUConfigFiles_;
+   private static final int maxMRUCfgs_ = 5;
+   private String sysConfigFile_;
+   private String startupScriptFile_;
    private String sysStateFile_ = "MMSystemState.cfg";
-   
    private ConfigGroupPad configPad_;
-   private ContrastPanel contrastPanel_;
-   
-   private double interval_;
-   private Timer timer_;
+   private LiveModeTimer liveModeTimer_;
    private GraphData lineProfileData_;
-   
    // labels for standard devices
-   String cameraLabel_;
-   String zStageLabel_;
-   String shutterLabel_;
-   
+   private String cameraLabel_;
+   private String zStageLabel_;
+   private String shutterLabel_;
+   private String xyStageLabel_;
    // applications settings
-   Preferences mainPrefs_;
-   
+   private Preferences mainPrefs_;
+   private Preferences systemPrefs_;
+   private Preferences colorPrefs_;
+
    // MMcore
-   CMMCore core_;
-   AcquisitionEngine engine_;
-   PositionList posList_;
+   private CMMCore core_;
+   private AcquisitionEngine engine_;
+   private PositionList posList_;
+   private PositionListDlg posListDlg_;
    private String openAcqDirectory_ = "";
    private boolean running_;
    private boolean configChanged_ = false;
+   private StrVector shutters_ = null;
+
    private JButton saveConfigButton_;
+   private ScriptPanel scriptPanel_;
+   private org.micromanager.utils.HotKeys hotKeys_;
+   private CenterAndDragListener centerAndDragListener_;
+   private ZWheelListener zWheelListener_;
+   private XYZKeyListener xyzKeyListener_;
+   private AcquisitionManager acqMgr_;
+   private static VirtualAcquisitionDisplay simpleDisplay_;
+   private SnapLiveContrastSettings simpleContrastSettings_;
+   private Color[] multiCameraColors_ = {Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW, Color.CYAN};
+   private int snapCount_ = -1;
+   private boolean liveModeSuspended_;
+   public Font defaultScriptFont_ = null;
+   public static final String SIMPLE_ACQ = "Snap/Live Window";
+   public static FileType MM_CONFIG_FILE
+            = new FileType("MM_CONFIG_FILE",
+                           "Micro-Manager Config File",
+                           "./MyScope.cfg",
+                           true, "cfg");
+
+   // Our instance
+   private static MMStudioMainFrame gui_;
+   // Callback
+   private CoreEventCallback cb_;
+   // Lock invoked while shutting down
+   private final Object shutdownLock_ = new Object();
+
+   private JMenuBar menuBar_;
+   private ConfigPadButtonPanel configPadButtonPanel_;
+   private final JMenu switchConfigurationMenu_;
+   private final MetadataPanel metadataPanel_;
+   public static FileType MM_DATA_SET 
+           = new FileType("MM_DATA_SET",
+                 "Micro-Manager Image Location",
+                 System.getProperty("user.home") + "/Untitled",
+                 false, (String[]) null);
+   private Thread pipelineClassLoadingThread_ = null;
+   private Class pipelineClass_ = null;
+   private Pipeline acquirePipeline_ = null;
+   private final JSplitPane splitPane_;
+   private volatile boolean ignorePropertyChanges_; 
+
+   public static AtomicBoolean seriousErrorReported_ = new AtomicBoolean(false);
+
+   public ImageWindow getImageWin() {
+      return simpleDisplay_.getHyperImage().getWindow();
+   }
+
+   public static VirtualAcquisitionDisplay getSimpleDisplay() {
+      return simpleDisplay_;
+   }
+
+   public static void createSimpleDisplay(String name, ImageCache cache) throws MMScriptException {
+      simpleDisplay_ = new VirtualAcquisitionDisplay(cache, name);  
+   }
    
+ public void checkSimpleAcquisition() {
+      if (core_.getCameraDevice().length() == 0) {
+         ReportingUtils.showError("No camera configured");
+         return;
+      }
+      int width = (int) core_.getImageWidth();
+      int height = (int) core_.getImageHeight();
+      int depth = (int) core_.getBytesPerPixel();
+      int bitDepth = (int) core_.getImageBitDepth();
+      int numCamChannels = (int) core_.getNumberOfCameraChannels();
+
+      try {
+         if (acquisitionExists(SIMPLE_ACQ)) {
+            if ((getAcquisitionImageWidth(SIMPLE_ACQ) != width)
+                    || (getAcquisitionImageHeight(SIMPLE_ACQ) != height)
+                    || (getAcquisitionImageByteDepth(SIMPLE_ACQ) != depth)
+                    || (getAcquisitionImageBitDepth(SIMPLE_ACQ) != bitDepth)
+                    || (getAcquisitionMultiCamNumChannels(SIMPLE_ACQ) != numCamChannels)) {  //Need to close and reopen simple window
+               closeAcquisitionImage5D(SIMPLE_ACQ);
+               closeAcquisition(SIMPLE_ACQ);
+            }
+         }
+         if (!acquisitionExists(SIMPLE_ACQ)) {
+            openAcquisition(SIMPLE_ACQ, "", 1, numCamChannels, 1, true);
+            if (numCamChannels > 1) {
+               for (long i = 0; i < numCamChannels; i++) {
+                  String chName = core_.getCameraChannelName(i);
+                  int defaultColor = multiCameraColors_[(int) i % multiCameraColors_.length].getRGB();
+                  setChannelColor(SIMPLE_ACQ, (int) i,
+                          getChannelColor(chName, defaultColor));
+                  setChannelName(SIMPLE_ACQ, (int) i, chName);
+               }
+            }
+            initializeSimpleAcquisition(SIMPLE_ACQ, width, height, depth, bitDepth, numCamChannels);
+            getAcquisition(SIMPLE_ACQ).promptToSave(false);
+            getAcquisition(SIMPLE_ACQ).toFront();
+         }
+      } catch (Exception ex) {
+         ReportingUtils.showError(ex);
+      }
+
+   }
+
+
+ public void checkSimpleAcquisition(TaggedImage image) {
+    try {
+       JSONObject tags = image.tags;
+      int width = MDUtils.getWidth(tags);
+      int height = MDUtils.getHeight(tags);
+      int depth = MDUtils.getDepth(tags);
+      int bitDepth = MDUtils.getBitDepth(tags);
+      int numCamChannels = (int) core_.getNumberOfCameraChannels();
+   
+         if (acquisitionExists(SIMPLE_ACQ)) {
+            if ((getAcquisitionImageWidth(SIMPLE_ACQ) != width)
+                    || (getAcquisitionImageHeight(SIMPLE_ACQ) != height)
+                    || (getAcquisitionImageByteDepth(SIMPLE_ACQ) != depth)
+                    || (getAcquisitionImageBitDepth(SIMPLE_ACQ) != bitDepth)
+                    || (getAcquisitionMultiCamNumChannels(SIMPLE_ACQ) != numCamChannels)) {  //Need to close and reopen simple window
+               closeAcquisitionImage5D(SIMPLE_ACQ);
+               closeAcquisition(SIMPLE_ACQ);
+            }
+         }
+         if (!acquisitionExists(SIMPLE_ACQ)) {
+            openAcquisition(SIMPLE_ACQ, "", 1, numCamChannels, 1, true);
+            if (numCamChannels > 1) {
+               for (long i = 0; i < numCamChannels; i++) {
+                  String chName = core_.getCameraChannelName(i);
+                  int defaultColor = multiCameraColors_[(int) i % multiCameraColors_.length].getRGB();
+                  setChannelColor(SIMPLE_ACQ, (int) i,
+                          getChannelColor(chName, defaultColor));
+                  setChannelName(SIMPLE_ACQ, (int) i, chName);
+               }
+            }
+            initializeSimpleAcquisition(SIMPLE_ACQ, width, height, depth, bitDepth, numCamChannels);
+            getAcquisition(SIMPLE_ACQ).promptToSave(false);
+            getAcquisition(SIMPLE_ACQ).toFront();
+         }
+      } catch (Exception ex) {
+         ReportingUtils.showError(ex);
+      }
+
+   }
+
+ 
+   public void saveSimpleContrastSettings(ContrastSettings c, int channel, String pixelType) {
+      simpleContrastSettings_.saveSettings(c, channel, pixelType);
+   }
+   
+   public ContrastSettings loadSimpleContrastSettigns(String pixelType, int channel) {
+      try {
+         return simpleContrastSettings_.loadSettings(pixelType, channel);
+      } catch (MMException ex) {
+         ReportingUtils.logError(ex);
+         return null;
+      }
+   }
+   
+   public void saveChannelColor(String chName, int rgb)
+   {
+      if (colorPrefs_ != null) {
+         colorPrefs_.putInt("Color_" + chName, rgb);      
+      }          
+   }
+   
+   public Color getChannelColor(String chName, int defaultColor)
+   {  
+      if (colorPrefs_ != null) {
+         defaultColor = colorPrefs_.getInt("Color_" + chName, defaultColor);
+      }
+      return new Color(defaultColor);
+   }
+  
+    private void initializeHelpMenu() {
+        // add help menu item
+        final JMenu helpMenu = new JMenu();
+        helpMenu.setText("Help");
+        menuBar_.add(helpMenu);
+        final JMenuItem usersGuideMenuItem = new JMenuItem();
+        usersGuideMenuItem.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    ij.plugin.BrowserLauncher.openURL("http://valelab.ucsf.edu/~MM/MMwiki/index.php/Micro-Manager_User%27s_Guide");
+                } catch (IOException e1) {
+                    ReportingUtils.showError(e1);
+                }
+            }
+        });
+        usersGuideMenuItem.setText("User's Guide...");
+        helpMenu.add(usersGuideMenuItem);
+        final JMenuItem configGuideMenuItem = new JMenuItem();
+        configGuideMenuItem.addActionListener(new ActionListener() {
+
+            @Override
+             public void actionPerformed(ActionEvent e) {
+                try {
+                    ij.plugin.BrowserLauncher.openURL("http://valelab.ucsf.edu/~MM/MMwiki/index.php/Micro-Manager_Configuration_Guide");
+                } catch (IOException e1) {
+                    ReportingUtils.showError(e1);
+                }
+            }
+        });
+        configGuideMenuItem.setText("Configuration Guide...");
+        helpMenu.add(configGuideMenuItem);
+        if (!systemPrefs_.getBoolean(RegistrationDlg.REGISTRATION, false)) {
+            final JMenuItem registerMenuItem = new JMenuItem();
+            registerMenuItem.addActionListener(new ActionListener() {
+
+                public void actionPerformed(ActionEvent e) {
+                    try {
+                        RegistrationDlg regDlg = new RegistrationDlg(systemPrefs_);
+                        regDlg.setVisible(true);
+                    } catch (Exception e1) {
+                        ReportingUtils.showError(e1);
+                    }
+                }
+            });
+            registerMenuItem.setText("Register your copy of Micro-Manager...");
+            helpMenu.add(registerMenuItem);
+        }
+        final MMStudioMainFrame thisFrame = this;
+        final JMenuItem reportProblemMenuItem = new JMenuItem();
+        reportProblemMenuItem.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                if (null == reportProblemDialog_) {
+                    reportProblemDialog_ = new ReportProblemDialog(core_, thisFrame, options_);
+                    thisFrame.addMMBackgroundListener(reportProblemDialog_);
+                    reportProblemDialog_.setBackground(guiColors_.background.get(options_.displayBackground_));
+                }
+                reportProblemDialog_.setVisible(true);
+            }
+        });
+        reportProblemMenuItem.setText("Report Problem");
+        helpMenu.add(reportProblemMenuItem);
+        final JMenuItem aboutMenuItem = new JMenuItem();
+        aboutMenuItem.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent e) {
+                MMAboutDlg dlg = new MMAboutDlg();
+                String versionInfo = "MM Studio version: " + VERSION;
+                versionInfo += "\n" + core_.getVersionInfo();
+                versionInfo += "\n" + core_.getAPIVersionInfo();
+                versionInfo += "\nUser: " + core_.getUserId();
+                versionInfo += "\nHost: " + core_.getHostName();
+                dlg.setVersionInfo(versionInfo);
+                dlg.setVisible(true);
+            }
+        });
+        aboutMenuItem.setText("About Micromanager...");
+        helpMenu.add(aboutMenuItem);
+        menuBar_.validate();
+    }
+
+   private void updateSwitchConfigurationMenu() {
+      switchConfigurationMenu_.removeAll();
+      for (final String configFile : MRUConfigFiles_) {
+         if (! configFile.equals(sysConfigFile_)) {
+            JMenuItem configMenuItem = new JMenuItem();
+            configMenuItem.setText(configFile);
+            configMenuItem.addActionListener(new ActionListener() {
+               String theConfigFile = configFile;
+               public void actionPerformed(ActionEvent e) {
+                  sysConfigFile_ = theConfigFile;
+                  loadSystemConfiguration();
+                  mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);
+               }
+            });
+            switchConfigurationMenu_.add(configMenuItem);
+         }
+      }
+   }
+
+   /**
+    * Allows MMListeners to register themselves
+    */
+   public void addMMListener(MMListenerInterface newL) {
+      if (MMListeners_.contains(newL))
+         return;
+      MMListeners_.add(newL);
+   }
+
+   /**
+    * Allows MMListeners to remove themselves
+    */
+   public void removeMMListener(MMListenerInterface oldL) {
+      if (!MMListeners_.contains(oldL))
+         return;
+      MMListeners_.remove(oldL);
+   }
+
+   /**
+    * Lets JComponents register themselves so that their background can be
+    * manipulated
+    */
+   public void addMMBackgroundListener(Component comp) {
+      if (MMFrames_.contains(comp))
+         return;
+      MMFrames_.add(comp);
+   }
+
+   /**
+    * Lets JComponents remove themselves from the list whose background gets
+    * changes
+    */
+   public void removeMMBackgroundListener(Component comp) {
+      if (!MMFrames_.contains(comp))
+         return;
+      MMFrames_.remove(comp);
+   }
+
+   /**
+    * Part of ScriptInterface
+    * Manipulate acquisition so that it looks like a burst
+    */
+   public void runBurstAcquisition() throws MMScriptException {
+      double interval = engine_.getFrameIntervalMs();
+      int nr = engine_.getNumFrames();
+      boolean doZStack = engine_.isZSliceSettingEnabled();
+      boolean doChannels = engine_.isChannelsSettingEnabled();
+      engine_.enableZSliceSetting(false);
+      engine_.setFrames(nr, 0);
+      engine_.enableChannelsSetting(false);
+      try {
+         engine_.acquire();
+      } catch (MMException e) {
+         throw new MMScriptException(e);
+      }
+      engine_.setFrames(nr, interval);
+      engine_.enableZSliceSetting(doZStack);
+      engine_.enableChannelsSetting(doChannels);
+   }
+
+   public void runBurstAcquisition(int nr) throws MMScriptException {
+      int originalNr = engine_.getNumFrames();
+      double interval = engine_.getFrameIntervalMs();
+      engine_.setFrames(nr, 0);
+      this.runBurstAcquisition();
+      engine_.setFrames(originalNr, interval);
+   }
+
+   public void runBurstAcquisition(int nr, String name, String root) throws MMScriptException {
+      //String originalName = engine_.getDirName();
+      String originalRoot = engine_.getRootName();
+      engine_.setDirName(name);
+      engine_.setRootName(root);
+      this.runBurstAcquisition(nr);
+      engine_.setRootName(originalRoot);
+      //engine_.setDirName(originalDirName);
+   }
+
+   public void logStartupProperties() {
+      core_.enableDebugLog(options_.debugLogEnabled_);
+      core_.logMessage("MM Studio version: " + getVersion());
+      core_.logMessage(core_.getVersionInfo());
+      core_.logMessage(core_.getAPIVersionInfo());
+      core_.logMessage("Operating System: " + System.getProperty("os.name") + " " + System.getProperty("os.version"));
+      core_.logMessage("JVM: " + System.getProperty("java.vm.name") + ", version " + System.getProperty("java.version") + "; " + System.getProperty("sun.arch.data.model") + " bit");
+   }
+
+   /**
+    * @deprecated
+    * @throws MMScriptException
+    */
+   public void startBurstAcquisition() throws MMScriptException {
+      runAcquisition();
+   }
+
+   public boolean isBurstAcquisitionRunning() throws MMScriptException {
+      if (engine_ == null)
+         return false;
+      return engine_.isAcquisitionRunning();
+   }
+
+   private void startLoadingPipelineClass() {
+      Thread.currentThread().setContextClassLoader(this.getClass().getClassLoader());
+      pipelineClassLoadingThread_ = new Thread("Pipeline Class loading thread") {
+         @Override
+         public void run() {
+            try {
+               pipelineClass_  = Class.forName("org.micromanager.AcqEngine");
+            } catch (Exception ex) {
+               ReportingUtils.logError(ex);
+               pipelineClass_ = null;
+            }
+         }
+      };
+      pipelineClassLoadingThread_.start();
+   }
+
+   public void addImageStorageListener(ImageCacheListener listener) {
+      throw new UnsupportedOperationException("Not supported yet.");
+   }
+
+   public ImageCache getAcquisitionImageCache(String acquisitionName) {
+      throw new UnsupportedOperationException("Not supported yet.");
+   }
+
+ 
+   
+   /**
+    * Callback to update GUI when a change happens in the MMCore.
+    */
+   public class CoreEventCallback extends MMEventCallback {
+
+      public CoreEventCallback() {
+         super();
+      }
+
+      @Override
+      public void onPropertiesChanged() {
+         // TODO: remove test once acquisition engine is fully multithreaded
+         if (engine_ != null && engine_.isAcquisitionRunning()) {
+            core_.logMessage("Notification from MMCore ignored because acquistion is running!");
+         } else {
+            if (ignorePropertyChanges_) {
+               core_.logMessage("Notification from MMCore ignored since the system is still loading");
+            } else {
+               core_.updateSystemStateCache();
+               updateGUI(true);
+               // update all registered listeners 
+               for (MMListenerInterface mmIntf : MMListeners_) {
+                  mmIntf.propertiesChangedAlert();
+               }
+               core_.logMessage("Notification from MMCore!");
+            }
+         }
+      }
+
+      @Override
+      public void onPropertyChanged(String deviceName, String propName, String propValue) {
+         core_.logMessage("Notification for Device: " + deviceName + " Property: " +
+               propName + " changed to value: " + propValue);
+         // update all registered listeners
+         for (MMListenerInterface mmIntf:MMListeners_) {
+            mmIntf.propertyChangedAlert(deviceName, propName, propValue);
+         }
+      }
+
+      @Override
+      public void onConfigGroupChanged(String groupName, String newConfig) {
+         try {
+            configPad_.refreshGroup(groupName, newConfig);
+            for (MMListenerInterface mmIntf:MMListeners_) {
+               mmIntf.configGroupChangedAlert(groupName, newConfig);
+            }
+         } catch (Exception e) {
+         }
+      }
+
+      @Override
+      public void onPixelSizeChanged(double newPixelSizeUm) {
+         updatePixSizeUm (newPixelSizeUm);
+         for (MMListenerInterface mmIntf:MMListeners_) {
+            mmIntf.pixelSizeChangedAlert(newPixelSizeUm);
+         }
+      }
+
+      @Override
+      public void onStagePositionChanged(String deviceName, double pos) {
+         if (deviceName.equals(zStageLabel_)) {
+            updateZPos(pos);
+            for (MMListenerInterface mmIntf:MMListeners_) {
+               mmIntf.stagePositionChangedAlert(deviceName, pos);
+            }
+         }
+      }
+
+      @Override
+      public void onStagePositionChangedRelative(String deviceName, double pos) {
+         if (deviceName.equals(zStageLabel_))
+            updateZPosRelative(pos);
+      }
+
+      @Override
+      public void onXYStagePositionChanged(String deviceName, double xPos, double yPos) {
+         if (deviceName.equals(xyStageLabel_)) {
+            updateXYPos(xPos, yPos);
+            for (MMListenerInterface mmIntf:MMListeners_) {
+               mmIntf.xyStagePositionChanged(deviceName, xPos, yPos);
+            }
+         }
+      }
+
+      @Override
+      public void onXYStagePositionChangedRelative(String deviceName, double xPos, double yPos) {
+         if (deviceName.equals(xyStageLabel_))
+            updateXYPosRelative(xPos, yPos);
+      }
+
+   }
+
+   private class PluginItem {
+
+      public Class<?> pluginClass = null;
+      public String menuItem = "undefined";
+      public MMPlugin plugin = null;
+      public String className = "";
+
+      public void instantiate() {
+
+         try {
+            if (plugin == null) {
+               plugin = (MMPlugin) pluginClass.newInstance();
+            }
+         } catch (InstantiationException e) {
+            ReportingUtils.logError(e);
+         } catch (IllegalAccessException e) {
+            ReportingUtils.logError(e);
+         }
+         plugin.setApp(MMStudioMainFrame.this);
+      }
+   }
+
+   /*
+    * Simple class used to cache static info
+    */
+   private class StaticInfo {
+
+      public long width_;
+      public long height_;
+      public long bytesPerPixel_;
+      public long imageBitDepth_;
+      public double pixSizeUm_;
+      public double zPos_;
+      public double x_;
+      public double y_;
+   }
+   private StaticInfo staticInfo_ = new StaticInfo();
+
    /**
     * Main procedure for stand alone operation.
     */
@@ -202,851 +780,1381 @@ public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
          MMStudioMainFrame frame = new MMStudioMainFrame(false);
          frame.setVisible(true);
          frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-      } catch (Exception e) {
-         e.printStackTrace();
+      } catch (Throwable e) {
+         ReportingUtils.showError(e, "A java error has caused Micro-Manager to exit.");
          System.exit(1);
       }
    }
-   
+
    public MMStudioMainFrame(boolean pluginStatus) {
       super();
-      
+
+      startLoadingPipelineClass();
+
       options_ = new MMOptions();
-      options_.loadSettings();
-      
+      try {
+         options_.loadSettings();
+      } catch (NullPointerException ex) {
+         ReportingUtils.logError(ex);
+      }
+
+      guiColors_ = new GUIColors();
+
+      plugins_ = new ArrayList<PluginItem>();
+
+      gui_ = this;
+
       runsAsPlugin_ = pluginStatus;
-      setIconImage(SwingResourceManager.getImage(MMStudioMainFrame.class, "icons/microscope.gif"));
+      setIconImage(SwingResourceManager.getImage(MMStudioMainFrame.class,
+            "icons/microscope.gif"));
       running_ = true;
-      contrastSettings8_ = new ContrastSettings();
-      contrastSettings16_ = new ContrastSettings();
+
+      acqMgr_ = new AcquisitionManager();
       
-      sysConfigFile_ = new String(System.getProperty("user.dir") + "/" + DEFAULT_CONFIG_FILE_NAME);
-      startupScriptFile_ = new String(System.getProperty("user.dir") + "/" + DEFAULT_SCRIPT_FILE_NAME);
+      simpleContrastSettings_ = new SnapLiveContrastSettings();
+
+      sysConfigFile_ = System.getProperty("user.dir") + "/"
+            + DEFAULT_CONFIG_FILE_NAME;
+
+      if (options_.startupScript_.length() > 0) {
+         startupScriptFile_ = System.getProperty("user.dir") + "/"
+                 + options_.startupScript_;
+      } else {
+         startupScriptFile_ = "";
+      }
+
+      ReportingUtils.SetContainingFrame(gui_);
+
       // set the location for app preferences
-      mainPrefs_ = Preferences.userNodeForPackage(this.getClass());
+      try {
+         mainPrefs_ = Preferences.userNodeForPackage(this.getClass());
+      } catch (Exception e) {
+         ReportingUtils.logError(e);
+      }
+      systemPrefs_ = mainPrefs_;
       
+      colorPrefs_ = mainPrefs_.node(mainPrefs_.absolutePath() + "/" + 
+              AcqControlDlg.COLOR_SETTINGS_NODE);
+      
+      // check system preferences
+      try {
+         Preferences p = Preferences.systemNodeForPackage(this.getClass());
+         if (null != p) {
+            // if we can not write to the systemPrefs, use AppPrefs instead
+            if (JavaUtils.backingStoreAvailable(p)) {
+               systemPrefs_ = p;
+            }
+         }
+      } catch (Exception e) {
+         ReportingUtils.logError(e);
+      }
+
       // show registration dialog if not already registered
       // first check user preferences (for legacy compatibility reasons)
-      boolean userReg = mainPrefs_.getBoolean(RegistrationDlg.REGISTRATION, false);
+      boolean userReg = mainPrefs_.getBoolean(RegistrationDlg.REGISTRATION,
+            false) || mainPrefs_.getBoolean(RegistrationDlg.REGISTRATION_NEVER, false);
+
       if (!userReg) {
-         
-         // now check system preferences
-         Preferences systemPrefs = Preferences.systemNodeForPackage(this.getClass());
-         boolean systemReg = systemPrefs.getBoolean(RegistrationDlg.REGISTRATION, false);
+         boolean systemReg = systemPrefs_.getBoolean(
+               RegistrationDlg.REGISTRATION, false) || systemPrefs_.getBoolean(RegistrationDlg.REGISTRATION_NEVER, false);
          if (!systemReg) {
             // prompt for registration info
-            RegistrationDlg dlg = new RegistrationDlg();
+            RegistrationDlg dlg = new RegistrationDlg(systemPrefs_);
             dlg.setVisible(true);
          }
       }
-                              
-      // intialize timer
-      interval_ = 30;
-      ActionListener timerHandler = new ActionListener() {
-         public void actionPerformed(ActionEvent evt) {
-            snapSingleImage();
-         }
-      };
-      timer_ = new Timer((int)interval_, timerHandler);
-      timer_.stop();
-      
+
       // load application preferences
-      // NOTE: only window size and position preferencesa are loaded,
+      // NOTE: only window size and position preferences are loaded,
       // not the settings for the camera and live imaging -
-      // attempting to set those automatically on stratup may cause problems with the hardware
+      // attempting to set those automatically on startup may cause problems
+      // with the hardware
       int x = mainPrefs_.getInt(MAIN_FRAME_X, 100);
       int y = mainPrefs_.getInt(MAIN_FRAME_Y, 100);
-      boolean stretch = mainPrefs_.getBoolean(MAIN_STRETCH_CONTRAST, true);
-      contrastSettings8_.min = mainPrefs_.getDouble(CONTRAST_SETTINGS_8_MIN, 0.0);
-      contrastSettings8_.max = mainPrefs_.getDouble(CONTRAST_SETTINGS_8_MAX, 0.0);
-      contrastSettings16_.min = mainPrefs_.getDouble(CONTRAST_SETTINGS_16_MIN, 0.0);
-      contrastSettings16_.max = mainPrefs_.getDouble(CONTRAST_SETTINGS_16_MAX, 0.0);
-      
+      int width = mainPrefs_.getInt(MAIN_FRAME_WIDTH, 580);
+      int height = mainPrefs_.getInt(MAIN_FRAME_HEIGHT, 482);
+      int dividerPos = mainPrefs_.getInt(MAIN_FRAME_DIVIDER_POS, 178);
       openAcqDirectory_ = mainPrefs_.get(OPEN_ACQ_DIR, "");
+
+      ToolTipManager ttManager = ToolTipManager.sharedInstance();
+      ttManager.setDismissDelay(TOOLTIP_DISPLAY_DURATION_MILLISECONDS);
+      ttManager.setInitialDelay(TOOLTIP_DISPLAY_INITIAL_DELAY_MILLISECONDS);
       
-      setBounds(x, y, 610, 451);
-      setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-      springLayout_ = new SpringLayout();
-      getContentPane().setLayout(springLayout_);
+      setBounds(x, y, width, height);
+      setExitStrategy(options_.closeOnExit_);
       setTitle(MICRO_MANAGER_TITLE);
-            
+      setBackground(guiColors_.background.get((options_.displayBackground_)));
+      SpringLayout topLayout = new SpringLayout();
+      
+      this.setMinimumSize(new Dimension(605,480));
+      JPanel topPanel = new JPanel();
+      topPanel.setLayout(topLayout);
+      topPanel.setMinimumSize(new Dimension(580, 195));
+
+      class ListeningJPanel extends JPanel implements AncestorListener {
+
+         public void ancestorMoved(AncestorEvent event) {
+            //System.out.println("moved!");
+         }
+
+         public void ancestorRemoved(AncestorEvent event) {}
+         public void ancestorAdded(AncestorEvent event) {}
+
+      }
+
+      ListeningJPanel bottomPanel = new ListeningJPanel();
+      bottomPanel.setLayout(topLayout);
+      
+      splitPane_ = new JSplitPane(JSplitPane.VERTICAL_SPLIT, true,
+              topPanel, bottomPanel);
+      splitPane_.setBorder(BorderFactory.createEmptyBorder());
+      splitPane_.setDividerLocation(dividerPos);
+      splitPane_.setResizeWeight(0.0);
+      splitPane_.addAncestorListener(bottomPanel);
+      getContentPane().add(splitPane_);
+
+
       // Snap button
       // -----------
-      final JButton buttonSnap = new JButton();
-      buttonSnap.setIconTextGap(6);
-      buttonSnap.setText("Snap");
-      buttonSnap.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/camera.png"));
-      buttonSnap.setFont(new Font("", Font.PLAIN, 10));
-      buttonSnap.setToolTipText("Snap single image");
-      buttonSnap.setMaximumSize(new Dimension(0, 0));
-      buttonSnap.addActionListener(new ActionListener() {
+      buttonSnap_ = new JButton();
+      buttonSnap_.setIconTextGap(6);
+      buttonSnap_.setText("Snap");
+      buttonSnap_.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class, "/org/micromanager/icons/camera.png"));
+      buttonSnap_.setFont(new Font("Arial", Font.PLAIN, 10));
+      buttonSnap_.setToolTipText("Snap single image");
+      buttonSnap_.setMaximumSize(new Dimension(0, 0));
+      buttonSnap_.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             doSnap();
          }
       });
-      getContentPane().add(buttonSnap);
-      springLayout_.putConstraint(SpringLayout.SOUTH, buttonSnap, 25, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, buttonSnap, 4, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, buttonSnap, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, buttonSnap, 7, SpringLayout.WEST, getContentPane());
-      
-      // Initalize
-      // ---------
-      
+      topPanel.add(buttonSnap_);
+      topLayout.putConstraint(SpringLayout.SOUTH, buttonSnap_, 25,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, buttonSnap_, 4,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, buttonSnap_, 95,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, buttonSnap_, 7,
+            SpringLayout.WEST, topPanel);
+
+      // Initialize
+      // ----------
+
       // Exposure field
       // ---------------
       final JLabel label_1 = new JLabel();
       label_1.setFont(new Font("Arial", Font.PLAIN, 10));
       label_1.setText("Exposure [ms]");
-      getContentPane().add(label_1);
-      springLayout_.putConstraint(SpringLayout.EAST, label_1, 198, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, label_1, 111, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, label_1, 39, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, label_1, 23, SpringLayout.NORTH, getContentPane());
-      
+      topPanel.add(label_1);
+      topLayout.putConstraint(SpringLayout.EAST, label_1, 198,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, label_1, 111,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, label_1, 39,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, label_1, 23,
+            SpringLayout.NORTH, topPanel);
+
       textFieldExp_ = new JTextField();
-      textFieldExp_.setFont(new Font("Arial", Font.PLAIN, 10));
-      textFieldExp_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            try {
-               core_.setExposure(Double.parseDouble(textFieldExp_.getText()));
-            } catch (Exception exp) {
-               handleException(exp);
+      textFieldExp_.addFocusListener(new FocusAdapter() {
+         @Override
+         public void focusLost(FocusEvent fe) {
+            synchronized(shutdownLock_) {
+            if (core_ != null)
+               setExposure();
             }
          }
       });
-      getContentPane().add(textFieldExp_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, textFieldExp_, 40, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, textFieldExp_, 21, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, textFieldExp_, 286, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, textFieldExp_, 203, SpringLayout.WEST, getContentPane());
-      
+      textFieldExp_.setFont(new Font("Arial", Font.PLAIN, 10));
+      textFieldExp_.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            setExposure();
+         }
+      });
+      topPanel.add(textFieldExp_);
+      topLayout.putConstraint(SpringLayout.SOUTH, textFieldExp_, 40,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, textFieldExp_, 21,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, textFieldExp_, 276,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, textFieldExp_, 203,
+            SpringLayout.WEST, topPanel);
+
       // Live button
       // -----------
       toggleButtonLive_ = new JToggleButton();
-      toggleButtonLive_.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/camera_go.png"));
+      toggleButtonLive_.setMargin(new Insets(2, 2, 2, 2));
+      toggleButtonLive_.setIconTextGap(1);
+      toggleButtonLive_.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/camera_go.png"));
       toggleButtonLive_.setIconTextGap(6);
-      toggleButtonLive_.setToolTipText("Continuously acquire images");
-      toggleButtonLive_.setFont(new Font("Arial", Font.BOLD, 10));
+      toggleButtonLive_.setToolTipText("Continuous live view");
+      toggleButtonLive_.setFont(new Font("Arial", Font.PLAIN, 10));
       toggleButtonLive_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            if (toggleButtonLive_.isSelected()){
-               if (interval_ < 30.0)
-                  interval_ = 30.0; // limit the interval to 30ms or more
-               timer_.setDelay((int)interval_);
-               enableLiveMode(true);
-               toggleButtonLive_.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/cancel.png"));
-            } else {
-               enableLiveMode(false);
-               toggleButtonLive_.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/camera_go.png"));
-            }
+
+         public void actionPerformed(ActionEvent e) {            
+            enableLiveMode(!isLiveModeOn());
          }
       });
-      
+
       toggleButtonLive_.setText("Live");
-      getContentPane().add(toggleButtonLive_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, toggleButtonLive_, 47, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, toggleButtonLive_, 26, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, toggleButtonLive_, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, toggleButtonLive_, 7, SpringLayout.WEST, getContentPane());
-      
+      topPanel.add(toggleButtonLive_);
+      topLayout.putConstraint(SpringLayout.SOUTH, toggleButtonLive_, 47,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, toggleButtonLive_, 26,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, toggleButtonLive_, 95,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, toggleButtonLive_, 7,
+            SpringLayout.WEST, topPanel);
+
+      // Acquire button
+      // -----------
+      toAlbumButton_ = new JButton();
+      toAlbumButton_.setMargin(new Insets(2, 2, 2, 2));
+      toAlbumButton_.setIconTextGap(1);
+      toAlbumButton_.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/camera_plus_arrow.png"));
+      toAlbumButton_.setIconTextGap(6);
+      toAlbumButton_.setToolTipText("Acquire single frame and add to an album");
+      toAlbumButton_.setFont(new Font("Arial", Font.PLAIN, 10));
+      toAlbumButton_.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            snapAndAddToImage5D();
+         }
+      });
+
+      toAlbumButton_.setText("Album");
+      topPanel.add(toAlbumButton_);
+      topLayout.putConstraint(SpringLayout.SOUTH, toAlbumButton_, 69,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, toAlbumButton_, 48,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, toAlbumButton_, 95,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, toAlbumButton_, 7,
+            SpringLayout.WEST, topPanel);
+
       // Shutter button
       // --------------
-      
+
       toggleButtonShutter_ = new JToggleButton();
       toggleButtonShutter_.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            try {
-               if (toggleButtonShutter_.isSelected()){
-                  setShutterButton(true);
-                  core_.setShutterOpen(true);
-               } else {
-                  core_.setShutterOpen(false);
-                  setShutterButton(false);
-               }
-            } catch (Exception e1) {
-               // TODO Auto-generated catch block
-               e1.printStackTrace();
-            }
+            toggleShutter();
          }
+
+
       });
       toggleButtonShutter_.setToolTipText("Open/close the shutter");
       toggleButtonShutter_.setIconTextGap(6);
       toggleButtonShutter_.setFont(new Font("Arial", Font.BOLD, 10));
       toggleButtonShutter_.setText("Open");
-      getContentPane().add(toggleButtonShutter_);
-      springLayout_.putConstraint(SpringLayout.EAST, toggleButtonShutter_, 275, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, toggleButtonShutter_, 203, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, toggleButtonShutter_, 136, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, toggleButtonShutter_, 115, SpringLayout.NORTH, getContentPane());
-      
-      // Profile
-      // -------
-      final JButton buttonProf = new JButton();
-      buttonProf.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/chart_curve.png"));
-      buttonProf.setFont(new Font("Arial", Font.PLAIN, 10));
-      buttonProf.setToolTipText("Open line profile window (requires line selection)");
-      buttonProf.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            openLineProfileWindow();
+      topPanel.add(toggleButtonShutter_);
+      topLayout.putConstraint(SpringLayout.EAST, toggleButtonShutter_,
+            275, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, toggleButtonShutter_,
+            203, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, toggleButtonShutter_,
+            138 - 21, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, toggleButtonShutter_,
+            117 - 21, SpringLayout.NORTH, topPanel);
+
+      // Active shutter label
+      final JLabel activeShutterLabel = new JLabel();
+      activeShutterLabel.setFont(new Font("Arial", Font.PLAIN, 10));
+      activeShutterLabel.setText("Shutter");
+      topPanel.add(activeShutterLabel);
+      topLayout.putConstraint(SpringLayout.SOUTH, activeShutterLabel,
+            108 - 22, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, activeShutterLabel,
+            95 - 22, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, activeShutterLabel,
+            160 - 2, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, activeShutterLabel,
+            113 - 2, SpringLayout.WEST, topPanel);
+
+      // Active shutter Combo Box
+      shutterComboBox_ = new JComboBox();
+      shutterComboBox_.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent arg0) {
+            try {
+               if (shutterComboBox_.getSelectedItem() != null) {
+                  core_.setShutterDevice((String) shutterComboBox_.getSelectedItem());
+               }
+            } catch (Exception e) {
+               ReportingUtils.showError(e);
+            }
+            return;
          }
       });
-      buttonProf.setText("Profile");
-      getContentPane().add(buttonProf);
-      springLayout_.putConstraint(SpringLayout.SOUTH, buttonProf, 69, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, buttonProf, 48, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, buttonProf, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, buttonProf, 7, SpringLayout.WEST, getContentPane());
-      
-      final JMenuBar menuBar = new JMenuBar();
-      setJMenuBar(menuBar);
-      
+      topPanel.add(shutterComboBox_);
+      topLayout.putConstraint(SpringLayout.SOUTH, shutterComboBox_,
+            114 - 22, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, shutterComboBox_,
+            92 - 22, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, shutterComboBox_, 275,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, shutterComboBox_, 170,
+            SpringLayout.WEST, topPanel);
+
+      menuBar_ = new JMenuBar();
+      setJMenuBar(menuBar_);
+
       final JMenu fileMenu = new JMenu();
       fileMenu.setText("File");
-      menuBar.add(fileMenu);
+      menuBar_.add(fileMenu);
 
       final JMenuItem openMenuItem = new JMenuItem();
       openMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            openAcquisitionData();
+            new Thread() {
+               @Override
+               public void run() {
+                  openAcquisitionData();
+               }
+            }.start();
          }
       });
-      openMenuItem.setText("Open Acquisition Data as Image5D......");
+      openMenuItem.setText("Open Acquisition Data...");
       fileMenu.add(openMenuItem);
 
       fileMenu.addSeparator();
-      
+
       final JMenuItem loadState = new JMenuItem();
       loadState.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             loadSystemState();
          }
       });
       loadState.setText("Load System State...");
       fileMenu.add(loadState);
-      
+
       final JMenuItem saveStateAs = new JMenuItem();
       fileMenu.add(saveStateAs);
       saveStateAs.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             saveSystemState();
          }
       });
       saveStateAs.setText("Save System State As...");
-                        
+
       fileMenu.addSeparator();
-      
+
       final JMenuItem exitMenuItem = new JMenuItem();
       exitMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             closeSequence();
          }
       });
       fileMenu.add(exitMenuItem);
       exitMenuItem.setText("Exit");
-
+/*
       final JMenu image5dMenu = new JMenu();
       image5dMenu.setText("Image5D");
-      menuBar.add(image5dMenu);
+      menuBar_.add(image5dMenu);
+
+      final JMenuItem closeAllMenuItem = new JMenuItem();
+      closeAllMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            WindowManager.closeAllWindows();
+         }
+      });
+      closeAllMenuItem.setText("Close All");
+      image5dMenu.add(closeAllMenuItem);
+
+      final JMenuItem duplicateMenuItem = new JMenuItem();
+      duplicateMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            Duplicate_Image5D duplicate = new Duplicate_Image5D();
+            duplicate.run("");
+         }
+      });
+      duplicateMenuItem.setText("Duplicate");
+      image5dMenu.add(duplicateMenuItem);
+
+      final JMenuItem cropMenuItem = new JMenuItem();
+      cropMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            Crop_Image5D crop = new Crop_Image5D();
+            crop.run("");
+         }
+      });
+      cropMenuItem.setText("Crop");
+      image5dMenu.add(cropMenuItem);
 
       final JMenuItem makeMontageMenuItem = new JMenuItem();
       makeMontageMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            //IJ.runPlugIn("Make_Montage", "");
             Make_Montage makeMontage = new Make_Montage();
             makeMontage.run("");
          }
       });
-      makeMontageMenuItem.setText("Make Montage...");
+      makeMontageMenuItem.setText("Make Montage");
       image5dMenu.add(makeMontageMenuItem);
 
       final JMenuItem zProjectMenuItem = new JMenuItem();
       zProjectMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            //IJ.runPlugIn("Z_Project", "");
             Z_Project projection = new Z_Project();
             projection.run("");
          }
       });
-      zProjectMenuItem.setText("Z Project...");
+      zProjectMenuItem.setText("Z Project");
       image5dMenu.add(zProjectMenuItem);
 
       final JMenuItem convertToRgbMenuItem = new JMenuItem();
       convertToRgbMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            //IJ.runPlugIn("org/micromanager/Image5D_Stack_to_RGB", "");
             Image5D_Stack_to_RGB stackToRGB = new Image5D_Stack_to_RGB();
             stackToRGB.run("");
          }
       });
-      convertToRgbMenuItem.setText("Convert to RGB (z)");
+      convertToRgbMenuItem.setText("Copy to RGB Stack(z)");
       image5dMenu.add(convertToRgbMenuItem);
 
       final JMenuItem convertToRgbtMenuItem = new JMenuItem();
       convertToRgbtMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            //IJ.runPlugIn("Image5D_Stack_to_RGB_t", "");
             Image5D_Stack_to_RGB_t stackToRGB_t = new Image5D_Stack_to_RGB_t();
             stackToRGB_t.run("");
-            
          }
       });
-      convertToRgbtMenuItem.setText("Convert to RGB (t)");
+      convertToRgbtMenuItem.setText("Copy to RGB Stack(t)");
       image5dMenu.add(convertToRgbtMenuItem);
 
       final JMenuItem convertToStackMenuItem = new JMenuItem();
       convertToStackMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            //IJ.runPlugIn("Image5D_to_Stack", "");
             Image5D_to_Stack image5DToStack = new Image5D_to_Stack();
             image5DToStack.run("");
          }
       });
-      convertToStackMenuItem.setText("Convert to Stack");
+      convertToStackMenuItem.setText("Copy to Stack");
       image5dMenu.add(convertToStackMenuItem);
-      
+
+      final JMenuItem convertToStacksMenuItem = new JMenuItem();
+      convertToStacksMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            Image5D_Channels_to_Stacks image5DToStacks = new Image5D_Channels_to_Stacks();
+            image5DToStacks.run("");
+         }
+      });
+      convertToStacksMenuItem.setText("Copy to Stacks (channels)");
+      image5dMenu.add(convertToStacksMenuItem);
+
+      final JMenuItem volumeViewerMenuItem = new JMenuItem();
+      volumeViewerMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            Image5D_to_VolumeViewer volumeViewer = new Image5D_to_VolumeViewer();
+            volumeViewer.run("");
+         }
+      });
+      volumeViewerMenuItem.setText("VolumeViewer");
+      image5dMenu.add(volumeViewerMenuItem);
+
+      final JMenuItem splitImageMenuItem = new JMenuItem();
+      splitImageMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            Split_Image5D splitImage = new Split_Image5D();
+            splitImage.run("");
+         }
+      });
+      splitImageMenuItem.setText("SplitView");
+      image5dMenu.add(splitImageMenuItem);
+
+ */
+
       final JMenu toolsMenu = new JMenu();
       toolsMenu.setText("Tools");
-      menuBar.add(toolsMenu);
-      
+      menuBar_.add(toolsMenu);
+
       final JMenuItem refreshMenuItem = new JMenuItem();
+      refreshMenuItem.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class, "icons/arrow_refresh.png"));
       refreshMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
-            updateGUI();
+            core_.updateSystemStateCache();
+            updateGUI(true);
          }
       });
       refreshMenuItem.setText("Refresh GUI");
+      refreshMenuItem.setToolTipText("Refresh all GUI controls directly from the hardware");
       toolsMenu.add(refreshMenuItem);
 
       final JMenuItem rebuildGuiMenuItem = new JMenuItem();
       rebuildGuiMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             initializeGUI();
+            core_.updateSystemStateCache(); 
          }
       });
       rebuildGuiMenuItem.setText("Rebuild GUI");
+      rebuildGuiMenuItem.setToolTipText("Regenerate micromanager user interface");
       toolsMenu.add(rebuildGuiMenuItem);
-      
+
       toolsMenu.addSeparator();
-      
-      final JMenuItem scriptingConsoleMenuItem = new JMenuItem();
-      toolsMenu.add(scriptingConsoleMenuItem);
-      scriptingConsoleMenuItem.addActionListener(new ActionListener() {
+
+      final JMenuItem scriptPanelMenuItem = new JMenuItem();
+      toolsMenu.add(scriptPanelMenuItem);
+      scriptPanelMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
-            createScriptingConsole();
+            scriptPanel_.setVisible(true);
          }
       });
-      scriptingConsoleMenuItem.setText("Scripting Console...");
+      scriptPanelMenuItem.setText("Script Panel...");
+      scriptPanelMenuItem.setToolTipText("Open micromanager script editor window");
       
+      final JMenuItem hotKeysMenuItem = new JMenuItem();
+      toolsMenu.add(hotKeysMenuItem);
+      hotKeysMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            HotKeysDialog hk = new HotKeysDialog
+                    (guiColors_.background.get((options_.displayBackground_)));
+            //hk.setBackground(guiColors_.background.get((options_.displayBackground_)));
+         }
+      });
+      hotKeysMenuItem.setText("Shortcuts...");
+      hotKeysMenuItem.setToolTipText("Create keyboard shortcuts to activate image acquisition, mark positions, or run custom scripts");
+
       final JMenuItem propertyEditorMenuItem = new JMenuItem();
       toolsMenu.add(propertyEditorMenuItem);
       propertyEditorMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             createPropertyEditor();
          }
       });
       propertyEditorMenuItem.setText("Device/Property Browser...");
+      propertyEditorMenuItem.setToolTipText("Open new window to view and edit property values in current configuration");
+      
+      toolsMenu.addSeparator();
+
+      final JMenuItem xyListMenuItem = new JMenuItem();
+      xyListMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent arg0) {
+            showXYPositionList();
+         }
+      });
+      xyListMenuItem.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class, "icons/application_view_list.png"));
+      xyListMenuItem.setText("XY List...");
+      toolsMenu.add(xyListMenuItem);
+      xyListMenuItem.setToolTipText("Open position list manager window");
+
+      final JMenuItem acquisitionMenuItem = new JMenuItem();
+      acquisitionMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            openAcqControlDialog();
+         }
+      });
+      acquisitionMenuItem.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class, "icons/film.png"));
+      acquisitionMenuItem.setText("Multi-Dimensional Acquisition...");
+      toolsMenu.add(acquisitionMenuItem);
+      acquisitionMenuItem.setToolTipText("Open multi-dimensional acquisition window");
+
+      /*
+      final JMenuItem splitViewMenuItem = new JMenuItem();
+      splitViewMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            splitViewDialog();
+         }
+      });
+      splitViewMenuItem.setText("Split View...");
+      toolsMenu.add(splitViewMenuItem);
+      */
+      
+      centerAndDragMenuItem_ = new JCheckBoxMenuItem();
+
+      centerAndDragMenuItem_.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            if (centerAndDragListener_ == null) {
+               centerAndDragListener_ = new CenterAndDragListener(core_, gui_);
+            }
+            if (!centerAndDragListener_.isRunning()) {
+               centerAndDragListener_.start();
+               centerAndDragMenuItem_.setSelected(true);
+            } else {
+               centerAndDragListener_.stop();
+               centerAndDragMenuItem_.setSelected(false);
+            }
+            mainPrefs_.putBoolean(MOUSE_MOVES_STAGE, centerAndDragMenuItem_.isSelected());
+         }
+      });
+
+      centerAndDragMenuItem_.setText("Mouse Moves Stage");
+      centerAndDragMenuItem_.setSelected(mainPrefs_.getBoolean(MOUSE_MOVES_STAGE, false));
+      centerAndDragMenuItem_.setToolTipText("When enabled, double clicking in live window moves stage");
+
+      toolsMenu.add(centerAndDragMenuItem_);
+
+      final JMenuItem calibrationMenuItem = new JMenuItem();
+      toolsMenu.add(calibrationMenuItem);
+      calibrationMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            createCalibrationListDlg();
+         }
+      });
+      calibrationMenuItem.setText("Pixel Size Calibration...");
+      toolsMenu.add(calibrationMenuItem);
+      
+      String calibrationTooltip = "Define size calibrations specific to each objective lens.  " +
+    		  "When the objective in use has a calibration defined, " +
+    		  "micromanager will automatically use it when " +
+    		  "calculating metadata";
+      
+      String mrjProp = System.getProperty("mrj.version");
+      if (mrjProp != null && !mrjProp.equals(null)) // running on a mac
+         calibrationMenuItem.setToolTipText(calibrationTooltip);
+      else
+         calibrationMenuItem.setToolTipText(TooltipTextMaker.addHTMLBreaksForTooltip(calibrationTooltip));
 
       toolsMenu.addSeparator();
 
       final JMenuItem configuratorMenuItem = new JMenuItem();
       configuratorMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent arg0) {
-            try {
-               // unload all devices before starting configurator
-               core_.reset();
-               
-               // run Configurator
-               ConfiguratorDlg configurator = new ConfiguratorDlg(core_, sysConfigFile_);
-               configurator.setVisible(true);
-               
-               // re-initialize the system with the new configuration file
-               sysConfigFile_ = configurator.getFileName();
-               mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);
-               loadSystemConfiguration();
-               initializeGUI();
-            } catch (Exception e) {
-               handleException(e);
-               return;
-            }
+            // true - new wizard
+            // false - old wizard
+            runHardwareWizard(true);
          }
       });
+      
       configuratorMenuItem.setText("Hardware Configuration Wizard...");
       toolsMenu.add(configuratorMenuItem);
-
+      configuratorMenuItem.setToolTipText("Open wizard to create new hardware configuration");      
+      
       final JMenuItem loadSystemConfigMenuItem = new JMenuItem();
       toolsMenu.add(loadSystemConfigMenuItem);
       loadSystemConfigMenuItem.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent e) {
             loadConfiguration();
-            updateTitle();
             initializeGUI();
          }
       });
       loadSystemConfigMenuItem.setText("Load Hardware Configuration...");
+      loadSystemConfigMenuItem.setToolTipText("Un-initialize current configuration and initialize new one");
+
+      switchConfigurationMenu_ = new JMenu();
+      for (int i=0; i<5; i++)
+      {
+         JMenuItem configItem = new JMenuItem();
+         configItem.setText(Integer.toString(i));
+         switchConfigurationMenu_.add(configItem);
+      }
+
+      final JMenuItem reloadConfigMenuItem = new JMenuItem();
+      toolsMenu.add(reloadConfigMenuItem);
+      reloadConfigMenuItem.addActionListener(new ActionListener() {
+         public void actionPerformed(ActionEvent e) {
+            loadSystemConfiguration();
+            initializeGUI();
+         }
+      });
+      reloadConfigMenuItem.setText("Reload Hardware Configuration");
+      reloadConfigMenuItem.setToolTipText("Un-initialize current configuration and initialize most recently loaded configuration");
+
+      switchConfigurationMenu_.setText("Switch Hardware Configuration");
+      toolsMenu.add(switchConfigurationMenu_);
+      switchConfigurationMenu_.setToolTipText("Switch between recently used configurations");
 
       final JMenuItem saveConfigurationPresetsMenuItem = new JMenuItem();
       saveConfigurationPresetsMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent arg0) {
             saveConfigPresets();
+            updateChannelCombos();
          }
       });
-      saveConfigurationPresetsMenuItem.setText("Save Configuration Presets");
+      saveConfigurationPresetsMenuItem.setText("Save Configuration Settings as...");
       toolsMenu.add(saveConfigurationPresetsMenuItem);
+      saveConfigurationPresetsMenuItem.setToolTipText("Save current configuration settings as new configuration file");
 
+/*
+      final JMenuItem regenerateConfiguratorDeviceListMenuItem = new JMenuItem();
+      regenerateConfiguratorDeviceListMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent arg0) {
+            Cursor oldc = Cursor.getDefaultCursor();
+            Cursor waitc = new Cursor(Cursor.WAIT_CURSOR);
+            setCursor(waitc);
+            StringBuffer resultFile = new StringBuffer();
+            MicroscopeModel.generateDeviceListFile(options_.enableDeviceDiscovery_, resultFile,core_);
+            setCursor(oldc);
+         }
+      });
+      regenerateConfiguratorDeviceListMenuItem.setText("Regenerate Configurator Device List");
+      toolsMenu.add(regenerateConfiguratorDeviceListMenuItem);
+*/
+
+      toolsMenu.addSeparator();
+
+      final MMStudioMainFrame thisInstance = this;
       final JMenuItem optionsMenuItem = new JMenuItem();
       optionsMenuItem.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
-            OptionsDlg dlg = new OptionsDlg(options_, core_, mainPrefs_);
+            int oldBufsize = options_.circularBufferSizeMB_;
+
+            OptionsDlg dlg = new OptionsDlg(options_, core_, mainPrefs_,
+                  thisInstance, sysConfigFile_);
             dlg.setVisible(true);
+            // adjust memory footprint if necessary
+            if (oldBufsize != options_.circularBufferSizeMB_) {
+               try {
+                  core_.setCircularBufferMemoryFootprint(options_.circularBufferSizeMB_);
+               } catch (Exception exc) {
+                  ReportingUtils.showError(exc);
+               }
+            }
          }
       });
       optionsMenuItem.setText("Options...");
       toolsMenu.add(optionsMenuItem);
 
-      final JMenu helpMenu = new JMenu();
-      helpMenu.setText("Help");
-      menuBar.add(helpMenu);
-      
-      final JMenuItem aboutMenuItem = new JMenuItem();
-      aboutMenuItem.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            MMAboutDlg dlg = new MMAboutDlg();
-            String versionInfo = "MM Studio version: " + VERSION;
-            versionInfo += "\n" + core_.getVersionInfo();
-            versionInfo += "\n" + core_.getAPIVersionInfo();
-            versionInfo += "\nUser: " + core_.getUserId();
-            versionInfo += "\nHost: " + core_.getHostName();
-            
-            dlg.setVersionInfo(versionInfo);
-            dlg.setVisible(true);
-         }
-      });
-      aboutMenuItem.setText("About...");
-      helpMenu.add(aboutMenuItem);
-      
-      
       final JLabel binningLabel = new JLabel();
       binningLabel.setFont(new Font("Arial", Font.PLAIN, 10));
       binningLabel.setText("Binning");
-      getContentPane().add(binningLabel);
-      springLayout_.putConstraint(SpringLayout.SOUTH, binningLabel, 88, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, binningLabel, 69, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, binningLabel, 203, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, binningLabel, 112, SpringLayout.WEST, getContentPane());
-      
-      labelImageDimensions_ = new JLabel();
-      labelImageDimensions_.setFont(new Font("Arial", Font.PLAIN, 10));
-      getContentPane().add(labelImageDimensions_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, labelImageDimensions_, -5, SpringLayout.SOUTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, labelImageDimensions_, -25, SpringLayout.SOUTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, labelImageDimensions_, -5, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, labelImageDimensions_, 5, SpringLayout.WEST, getContentPane());
-      
-      final JLabel pixelTypeLabel = new JLabel();
-      pixelTypeLabel.setFont(new Font("Arial", Font.PLAIN, 10));
-      pixelTypeLabel.setText("Pixel type");
-      getContentPane().add(pixelTypeLabel);
-      springLayout_.putConstraint(SpringLayout.SOUTH, pixelTypeLabel, 64, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, pixelTypeLabel, 43, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, pixelTypeLabel, 197, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, pixelTypeLabel, 111, SpringLayout.WEST, getContentPane());
-      
-      comboPixelType_ = new JComboBox();
-      comboPixelType_.setFont(new Font("Arial", Font.PLAIN, 10));
-      comboPixelType_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            changePixelType();
-         }
-      });
-      getContentPane().add(comboPixelType_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, comboPixelType_, 64, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, comboPixelType_, 43, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, comboPixelType_, 293, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, comboPixelType_, 203, SpringLayout.WEST, getContentPane());
+      topPanel.add(binningLabel);
+      topLayout.putConstraint(SpringLayout.SOUTH, binningLabel, 64,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, binningLabel, 43,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, binningLabel, 200 - 1,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, binningLabel, 112 - 1,
+            SpringLayout.WEST, topPanel);
 
-      
+      metadataPanel_ = new MetadataPanel();
+      bottomPanel.add(metadataPanel_);
+      topLayout.putConstraint(SpringLayout.SOUTH, metadataPanel_, 0,
+            SpringLayout.SOUTH, bottomPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, metadataPanel_, 0,
+            SpringLayout.NORTH, bottomPanel);
+      topLayout.putConstraint(SpringLayout.EAST, metadataPanel_, 0,
+            SpringLayout.EAST, bottomPanel);
+      topLayout.putConstraint(SpringLayout.WEST, metadataPanel_, 0,
+            SpringLayout.WEST, bottomPanel);
+      metadataPanel_.setBorder(BorderFactory.createEmptyBorder());
+
+
+
       comboBinning_ = new JComboBox();
       comboBinning_.setFont(new Font("Arial", Font.PLAIN, 10));
       comboBinning_.setMaximumRowCount(4);
       comboBinning_.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             changeBinning();
          }
       });
-      getContentPane().add(comboBinning_);
-      springLayout_.putConstraint(SpringLayout.EAST, comboBinning_, 293, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, comboBinning_, 203, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, comboBinning_, 89, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, comboBinning_, 68, SpringLayout.NORTH, getContentPane());
-      
-      
-      configPad_ = new ConfigGroupPad();
-      configPad_.setFont(new Font("", Font.PLAIN, 10));
-      getContentPane().add(configPad_);
-      springLayout_.putConstraint(SpringLayout.EAST, configPad_, -4, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, configPad_, 5, SpringLayout.EAST, comboBinning_);
-      
+      topPanel.add(comboBinning_);
+      topLayout.putConstraint(SpringLayout.EAST, comboBinning_, 275,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, comboBinning_, 200,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, comboBinning_, 66,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, comboBinning_, 43,
+            SpringLayout.NORTH, topPanel);
+
+
+
       final JLabel cameraSettingsLabel = new JLabel();
       cameraSettingsLabel.setFont(new Font("Arial", Font.BOLD, 11));
       cameraSettingsLabel.setText("Camera settings");
-      getContentPane().add(cameraSettingsLabel);
-      springLayout_.putConstraint(SpringLayout.EAST, cameraSettingsLabel, 211, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, cameraSettingsLabel, 6, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, cameraSettingsLabel, 109, SpringLayout.WEST, getContentPane());
+      topPanel.add(cameraSettingsLabel);
+      topLayout.putConstraint(SpringLayout.EAST, cameraSettingsLabel,
+            211, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, cameraSettingsLabel, 6,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, cameraSettingsLabel,
+            109, SpringLayout.WEST, topPanel);
+
       
+      labelImageDimensions_ = new JLabel();
+      labelImageDimensions_.setFont(new Font("Arial", Font.PLAIN, 10));
+      topPanel.add(labelImageDimensions_);
+      topLayout.putConstraint(SpringLayout.SOUTH, labelImageDimensions_,
+            0, SpringLayout.SOUTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, labelImageDimensions_,
+            -20, SpringLayout.SOUTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, labelImageDimensions_,
+            0, SpringLayout.EAST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, labelImageDimensions_,
+            5, SpringLayout.WEST, topPanel);
+      
+      
+      configPad_ = new ConfigGroupPad();
+      configPadButtonPanel_ = new ConfigPadButtonPanel();
+      configPadButtonPanel_.setConfigPad(configPad_);
+      configPadButtonPanel_.setGUI(MMStudioMainFrame.getInstance());
+      
+      configPad_.setFont(new Font("", Font.PLAIN, 10));
+      topPanel.add(configPad_);
+      topLayout.putConstraint(SpringLayout.EAST, configPad_, -4,
+            SpringLayout.EAST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, configPad_, 5,
+            SpringLayout.EAST, comboBinning_);
+      topLayout.putConstraint(SpringLayout.SOUTH, configPad_, -4,
+            SpringLayout.NORTH, configPadButtonPanel_);
+      topLayout.putConstraint(SpringLayout.NORTH, configPad_, 21,
+            SpringLayout.NORTH, topPanel);
+
+
+      topPanel.add(configPadButtonPanel_);
+      topLayout.putConstraint(SpringLayout.EAST, configPadButtonPanel_, -4,
+            SpringLayout.EAST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, configPadButtonPanel_, 5,
+            SpringLayout.EAST, comboBinning_);
+      topLayout.putConstraint(SpringLayout.NORTH, configPadButtonPanel_, -40,
+            SpringLayout.SOUTH, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, configPadButtonPanel_, -20,
+            SpringLayout.SOUTH, topPanel);
+
+
       final JLabel stateDeviceLabel = new JLabel();
       stateDeviceLabel.setFont(new Font("Arial", Font.BOLD, 11));
-      stateDeviceLabel.setText("Configuration Presets");
-      getContentPane().add(stateDeviceLabel);
-      springLayout_.putConstraint(SpringLayout.SOUTH, stateDeviceLabel, 21, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, stateDeviceLabel, 5, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, stateDeviceLabel, 455, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, stateDeviceLabel, 305, SpringLayout.WEST, getContentPane());
-      
+      stateDeviceLabel.setText("Configuration settings");
+      topPanel.add(stateDeviceLabel);
+      topLayout.putConstraint(SpringLayout.SOUTH, stateDeviceLabel, 0,
+            SpringLayout.SOUTH, cameraSettingsLabel);
+      topLayout.putConstraint(SpringLayout.NORTH, stateDeviceLabel, 0,
+            SpringLayout.NORTH, cameraSettingsLabel);
+      topLayout.putConstraint(SpringLayout.EAST, stateDeviceLabel, 150,
+            SpringLayout.WEST, configPad_);
+      topLayout.putConstraint(SpringLayout.WEST, stateDeviceLabel, 0,
+            SpringLayout.WEST, configPad_);
+
+
       final JButton buttonAcqSetup = new JButton();
       buttonAcqSetup.setMargin(new Insets(2, 2, 2, 2));
       buttonAcqSetup.setIconTextGap(1);
-      buttonAcqSetup.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/film.png"));
-      buttonAcqSetup.setToolTipText("Open Acquistion dialog");
-      buttonAcqSetup.setFont(new Font("Arial", Font.BOLD, 10));
+      buttonAcqSetup.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class, "/org/micromanager/icons/film.png"));
+      buttonAcqSetup.setToolTipText("Open multi-dimensional acquisition window");
+      buttonAcqSetup.setFont(new Font("Arial", Font.PLAIN, 10));
       buttonAcqSetup.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
-            try {
-               boolean needsGroupUpdate = true;
-               if (acqControlWin_ == null) {
-                  acqControlWin_ = new AcqControlDlg(engine_, mainPrefs_);
-                  needsGroupUpdate = false;
-               }
-               if (acqControlWin_.isActive())
-                  acqControlWin_.setTopPosition();
-               acqControlWin_.setVisible(true);
-               
-               // TODO: this call causes a strange exception the first time the dialog is created
-               // something to do with the order in which combo box creation is performed
-               
-               //acqControlWin_.updateGroupsCombo();
-            } catch(Exception exc) {
-               exc.printStackTrace();
-               handleError(exc.getMessage() +
-                           "\nAcquistion window failed to open due to invalid or corrupted settings.\n" +
-                           "Try resetting registry settings to factory defaults (Menu Tools|Options).");
-            }
+            openAcqControlDialog();
          }
       });
-      buttonAcqSetup.setText("Acquisition");
-      getContentPane().add(buttonAcqSetup);
-      springLayout_.putConstraint(SpringLayout.SOUTH, buttonAcqSetup, 91, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, buttonAcqSetup, 70, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, buttonAcqSetup, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, buttonAcqSetup, 7, SpringLayout.WEST, getContentPane());
- 
-            
+      buttonAcqSetup.setText("Multi-D Acq.");
+      topPanel.add(buttonAcqSetup);
+      topLayout.putConstraint(SpringLayout.SOUTH, buttonAcqSetup, 91,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, buttonAcqSetup, 70,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, buttonAcqSetup, 95,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, buttonAcqSetup, 7,
+            SpringLayout.WEST, topPanel);
+
       autoShutterCheckBox_ = new JCheckBox();
       autoShutterCheckBox_.setFont(new Font("Arial", Font.PLAIN, 10));
       autoShutterCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent e) {
-            core_.setAutoShutter(autoShutterCheckBox_.isSelected());
-            if (shutterLabel_.length() > 0)
+             shutterLabel_ = core_.getShutterDevice();
+             if (shutterLabel_.length() == 0) {
+                toggleButtonShutter_.setEnabled(false);
+                return;
+             }
+            if (autoShutterCheckBox_.isSelected()) {
                try {
-                  setShutterButton(core_.getShutterOpen());
-               } catch (Exception e1) {
-                  // do not complain here
-               }
-               if (autoShutterCheckBox_.isSelected())
+                  core_.setAutoShutter(true);
+                  core_.setShutterOpen(false);
+                  toggleButtonShutter_.setSelected(false);
+                  toggleButtonShutter_.setText("Open");
                   toggleButtonShutter_.setEnabled(false);
-               else
-                  toggleButtonShutter_.setEnabled(true);
-               
+               } catch (Exception e2) {
+                  ReportingUtils.logError(e2);
+               }
+            } else {
+               try {
+               core_.setAutoShutter(false);
+               core_.setShutterOpen(false);
+               toggleButtonShutter_.setEnabled(true);
+               toggleButtonShutter_.setText("Open");
+               } catch (Exception exc) {
+                  ReportingUtils.logError(exc);
+               }
+            }
+          
          }
       });
       autoShutterCheckBox_.setIconTextGap(6);
       autoShutterCheckBox_.setHorizontalTextPosition(SwingConstants.LEADING);
       autoShutterCheckBox_.setText("Auto shutter");
-      getContentPane().add(autoShutterCheckBox_);
-      springLayout_.putConstraint(SpringLayout.EAST, autoShutterCheckBox_, 202, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, autoShutterCheckBox_, 110, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, autoShutterCheckBox_, 137, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, autoShutterCheckBox_, 114, SpringLayout.NORTH, getContentPane());
+      topPanel.add(autoShutterCheckBox_);
+      topLayout.putConstraint(SpringLayout.EAST, autoShutterCheckBox_,
+            202 - 3, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, autoShutterCheckBox_,
+            110 - 3, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, autoShutterCheckBox_,
+            141 - 22, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, autoShutterCheckBox_,
+            118 - 22, SpringLayout.NORTH, topPanel);
 
+    
       final JButton refreshButton = new JButton();
-      refreshButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/arrow_refresh.png"));
+      refreshButton.setMargin(new Insets(2, 2, 2, 2));
+      refreshButton.setIconTextGap(1);
+      refreshButton.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/arrow_refresh.png"));
       refreshButton.setFont(new Font("Arial", Font.PLAIN, 10));
       refreshButton.setToolTipText("Refresh all GUI controls directly from the hardware");
       refreshButton.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
-            updateGUI();
-        }
+            core_.updateSystemStateCache(); 
+            updateGUI(true);
+         }
       });
       refreshButton.setText("Refresh");
-      getContentPane().add(refreshButton);
-      springLayout_.putConstraint(SpringLayout.SOUTH, refreshButton, 113, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, refreshButton, 92, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, refreshButton, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, refreshButton, 7, SpringLayout.WEST, getContentPane());
-            
+      topPanel.add(refreshButton);
+      topLayout.putConstraint(SpringLayout.SOUTH, refreshButton, 113,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, refreshButton, 92,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, refreshButton, 95,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, refreshButton, 7,
+            SpringLayout.WEST, topPanel);
+
+      JLabel citePleaLabel = new JLabel("<html>Please <a href=\"http://micro-manager.org\">cite Micro-Manager</a> so funding will continue!</html>");
+      topPanel.add(citePleaLabel);
+      citePleaLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+      topLayout.putConstraint(SpringLayout.SOUTH, citePleaLabel, 139,
+              SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, citePleaLabel, 119,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, citePleaLabel, 270,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, citePleaLabel, 7,
+            SpringLayout.WEST, topPanel);
+
+      class Pleader extends Thread{
+         Pleader(){
+            super("pleader");
+         }
+         @Override
+         public void run(){
+          try {
+               ij.plugin.BrowserLauncher.openURL("https://valelab.ucsf.edu/~MM/MMwiki/index.php/Citing_Micro-Manager");
+            } catch (IOException e1) {
+               ReportingUtils.showError(e1);
+            }
+         }
+
+      }
+      citePleaLabel.addMouseListener(new MouseAdapter() {
+         @Override
+          public void mousePressed(MouseEvent e) {
+             Pleader p = new Pleader();
+             p.start();
+          }
+      });
+
+
       // add window listeners
       addWindowListener(new WindowAdapter() {
+         @Override
          public void windowClosing(WindowEvent e) {
-            running_ = false;
             closeSequence();
          }
-         
+
+         @Override
          public void windowOpened(WindowEvent e) {
             // -------------------
             // initialize hardware
             // -------------------
-            core_ = new CMMCore();
-            core_.enableDebugLog(options_.debugLogEnabled);
-//           core_.clearLog();
-            cameraLabel_ = new String("");
-            shutterLabel_ = new String("");
-            zStageLabel_ = new String("");
+            try {
+               core_ = new CMMCore();
+            } catch(UnsatisfiedLinkError ex) {
+               ReportingUtils.showError(ex, "Failed to open libMMCoreJ_wrap.jnilib");
+               return;
+            }
+            ReportingUtils.setCore(core_);
+            logStartupProperties();
+                    
+            cameraLabel_ = "";
+            shutterLabel_ = "";
+            zStageLabel_ = "";
+            xyStageLabel_ = "";
+            engine_ = new AcquisitionWrapperEngine();
+
+            // register callback for MMCore notifications, this is a global
+            // to avoid garbage collection
+            cb_ = new CoreEventCallback();
+            core_.registerCallback(cb_);
+
+            try {
+               core_.setCircularBufferMemoryFootprint(options_.circularBufferSizeMB_);
+            } catch (Exception e2) {
+               ReportingUtils.showError(e2);
+            }
+
+            MMStudioMainFrame parent = (MMStudioMainFrame) e.getWindow();
+            if (parent != null) {
+               engine_.setParentGUI(parent);
+            }
+
+            loadMRUConfigFiles();
+            initializePlugins();
+
+            toFront();
             
-            if (options_.multiThreadedAcqEnabled)
-               engine_ = new MMAcquisitionEngineMT();
-            else
-               engine_ = new MMAcquisitionEngine();
-            
-            engine_.setCore(core_);
+            if (!options_.doNotAskForConfigFile_) {
+               MMIntroDlg introDlg = new MMIntroDlg(VERSION, MRUConfigFiles_);
+               introDlg.setConfigFile(sysConfigFile_);
+               introDlg.setBackground(guiColors_.background.get((options_.displayBackground_)));
+               introDlg.setVisible(true);
+               sysConfigFile_ = introDlg.getConfigFile();
+            }
+            saveMRUConfigFiles();
+
+            mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);
+
+            paint(MMStudioMainFrame.this.getGraphics());
+
+            engine_.setCore(core_, afMgr_);
             posList_ = new PositionList();
             engine_.setPositionList(posList_);
-            MMStudioMainFrame parent = (MMStudioMainFrame) e.getWindow();
-            if (parent != null)
-               engine_.setParentGUI(parent);
-            
-            // load configuration from the file
-            sysConfigFile_ = mainPrefs_.get(SYSTEM_CONFIG_FILE, sysConfigFile_);
-            //startupScriptFile_ = mainPrefs_.get(STARTUP_SCRIPT_FILE, startupScriptFile_);
-            MMIntroDlg introDlg = new MMIntroDlg(VERSION);
-            introDlg.setConfigFile(sysConfigFile_);
-            //introDlg.setScriptFile(startupScriptFile_);
-            introDlg.setVisible(true);
-            sysConfigFile_ = introDlg.getConfigFile();
-            //startupScriptFile_ = introDlg.getScriptFile();
-            mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);               
-            //mainPrefs_.put(STARTUP_SCRIPT_FILE, startupScriptFile_);               
-            
-            paint(MMStudioMainFrame.this.getGraphics());
-            
-            loadSystemConfiguration();
+            // load (but do no show) the scriptPanel
+            createScriptPanel();
+
+            // Create an instance of HotKeys so that they can be read in from prefs
+            hotKeys_ = new org.micromanager.utils.HotKeys();
+            hotKeys_.loadSettings();
+
+            // if an error occurred during config loading, 
+            // do not display more errors than needed
+            if (!loadSystemConfiguration())
+               ReportingUtils.showErrorOn(false);
+
             executeStartupScript();
-                        
+
+
+            // Create Multi-D window here but do not show it.
+            // This window needs to be created in order to properly set the "ChannelGroup"
+            // based on the Multi-D parameters
+            acqControlWin_ = new AcqControlDlg(engine_, mainPrefs_, MMStudioMainFrame.this);
+            addMMBackgroundListener(acqControlWin_);
+
             configPad_.setCore(core_);
-            if (parent != null)
+            if (parent != null) {
                configPad_.setParentGUI(parent);
-            
+            }
+
+            configPadButtonPanel_.setCore(core_);
+
             // initialize controls
-            initializeGUI();      
+            // initializeGUI();  Not needed since it is already called in loadSystemConfiguration
+            initializeHelpMenu();
+            
+            String afDevice = mainPrefs_.get(AUTOFOCUS_DEVICE, "");
+            if (afMgr_.hasDevice(afDevice)) {
+               try {
+                  afMgr_.selectDevice(afDevice);
+               } catch (MMException e1) {
+                  // this error should never happen
+                  ReportingUtils.showError(e1);
+               }
+            }
+            
+            // switch error reporting back on
+            ReportingUtils.showErrorOn(true);
          }
+
+         private void initializePlugins() {
+            pluginMenu_ = new JMenu();
+            pluginMenu_.setText("Plugins");
+            menuBar_.add(pluginMenu_);
+            new Thread("Plugin loading") {
+               @Override
+               public void run() {
+                  // Needed for loading clojure-based jars:
+                  Thread.currentThread().setContextClassLoader(this.getClass().getClassLoader());
+                  loadPlugins();
+               }
+            }.run();
+         }
+
+        
       });
 
       final JButton setRoiButton = new JButton();
-      setRoiButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/shape_handles.png"));
+      setRoiButton.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/shape_handles.png"));
       setRoiButton.setFont(new Font("Arial", Font.PLAIN, 10));
       setRoiButton.setToolTipText("Set Region Of Interest to selected rectangle");
       setRoiButton.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             setROI();
          }
       });
-      getContentPane().add(setRoiButton);
-      springLayout_.putConstraint(SpringLayout.EAST, setRoiButton, 48, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, setRoiButton, 7, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, setRoiButton, 172, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, setRoiButton, 152, SpringLayout.NORTH, getContentPane());
+      topPanel.add(setRoiButton);
+      topLayout.putConstraint(SpringLayout.EAST, setRoiButton, 37,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, setRoiButton, 7,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, setRoiButton, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, setRoiButton, 154,
+            SpringLayout.NORTH, topPanel);
 
       final JButton clearRoiButton = new JButton();
-      clearRoiButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/arrow_out.png"));
+      clearRoiButton.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/arrow_out.png"));
       clearRoiButton.setFont(new Font("Arial", Font.PLAIN, 10));
       clearRoiButton.setToolTipText("Reset Region of Interest to full frame");
       clearRoiButton.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent e) {
             clearROI();
          }
       });
-      getContentPane().add(clearRoiButton);
-      springLayout_.putConstraint(SpringLayout.EAST, clearRoiButton, 93, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, clearRoiButton, 51, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, clearRoiButton, 172, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, clearRoiButton, 152, SpringLayout.NORTH, getContentPane());
+      topPanel.add(clearRoiButton);
+      topLayout.putConstraint(SpringLayout.EAST, clearRoiButton, 70,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, clearRoiButton, 40,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.SOUTH, clearRoiButton, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, clearRoiButton, 154,
+            SpringLayout.NORTH, topPanel);
 
       final JLabel regionOfInterestLabel = new JLabel();
       regionOfInterestLabel.setFont(new Font("Arial", Font.BOLD, 11));
       regionOfInterestLabel.setText("ROI");
-      getContentPane().add(regionOfInterestLabel);
-      springLayout_.putConstraint(SpringLayout.SOUTH, regionOfInterestLabel, 152, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, regionOfInterestLabel, 138, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, regionOfInterestLabel, 71, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, regionOfInterestLabel, 8, SpringLayout.WEST, getContentPane());
-
-      final JLabel gainLabel = new JLabel();
-      gainLabel.setFont(new Font("Arial", Font.PLAIN, 10));
-      gainLabel.setText("Gain");
-      getContentPane().add(gainLabel);
-      springLayout_.putConstraint(SpringLayout.SOUTH, gainLabel, 108, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, gainLabel, 95, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, gainLabel, 136, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, gainLabel, 113, SpringLayout.WEST, getContentPane());
-
-      textFieldGain_ = new JTextField();
-      textFieldGain_.setFont(new Font("Arial", Font.PLAIN, 10));
-      textFieldGain_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            try {
-               if (isCameraAvailable()) {
-                  core_.setProperty(core_.getCameraDevice(), MMCoreJ.getG_Keyword_Gain(), textFieldGain_.getText());
-               }
-            } catch (Exception exp) {
-               handleException(exp);
-            }
-         }
-      });
-      getContentPane().add(textFieldGain_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, textFieldGain_, 112, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, textFieldGain_, 93, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, textFieldGain_, 275, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, textFieldGain_, 203, SpringLayout.WEST, getContentPane());
-
-      contrastPanel_ = new ContrastPanel();
-      contrastPanel_.setContrastStretch(stretch);
-      contrastPanel_.setBorder(new LineBorder(Color.black, 1, false));
-      getContentPane().add(contrastPanel_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, contrastPanel_, -26, SpringLayout.SOUTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, contrastPanel_, 176, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, contrastPanel_, -4, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, contrastPanel_, 7, SpringLayout.WEST, getContentPane());
+      topPanel.add(regionOfInterestLabel);
+      topLayout.putConstraint(SpringLayout.SOUTH, regionOfInterestLabel,
+            154, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, regionOfInterestLabel,
+            140, SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, regionOfInterestLabel,
+            71, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, regionOfInterestLabel,
+            8, SpringLayout.WEST, topPanel);
+   
 
       final JLabel regionOfInterestLabel_1 = new JLabel();
       regionOfInterestLabel_1.setFont(new Font("Arial", Font.BOLD, 11));
       regionOfInterestLabel_1.setText("Zoom");
-      getContentPane().add(regionOfInterestLabel_1);
-      springLayout_.putConstraint(SpringLayout.SOUTH, regionOfInterestLabel_1, 154, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, regionOfInterestLabel_1, 140, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, regionOfInterestLabel_1, 177, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, regionOfInterestLabel_1, 114, SpringLayout.WEST, getContentPane());
+      topPanel.add(regionOfInterestLabel_1);
+      topLayout.putConstraint(SpringLayout.SOUTH,
+            regionOfInterestLabel_1, 154, SpringLayout.NORTH,
+            topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH,
+            regionOfInterestLabel_1, 140, SpringLayout.NORTH,
+            topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, regionOfInterestLabel_1,
+            139, SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, regionOfInterestLabel_1,
+            81, SpringLayout.WEST, topPanel);
 
       final JButton zoomInButton = new JButton();
       zoomInButton.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
             zoomIn();
          }
       });
-      zoomInButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/zoom_in.png"));
-      zoomInButton.setToolTipText("Set Region Of Interest to selected rectangle");
+      zoomInButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class,
+            "/org/micromanager/icons/zoom_in.png"));
+      zoomInButton.setToolTipText("Zoom in");
       zoomInButton.setFont(new Font("Arial", Font.PLAIN, 10));
-      getContentPane().add(zoomInButton);
-      springLayout_.putConstraint(SpringLayout.SOUTH, zoomInButton, 174, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, zoomInButton, 154, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, zoomInButton, 154, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, zoomInButton, 113, SpringLayout.WEST, getContentPane());
+      topPanel.add(zoomInButton);
+      topLayout.putConstraint(SpringLayout.SOUTH, zoomInButton, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, zoomInButton, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, zoomInButton, 110,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, zoomInButton, 80,
+            SpringLayout.WEST, topPanel);
 
       final JButton zoomOutButton = new JButton();
       zoomOutButton.addActionListener(new ActionListener() {
+
          public void actionPerformed(final ActionEvent e) {
             zoomOut();
          }
       });
-      zoomOutButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "/org/micromanager/icons/zoom_out.png"));
-      zoomOutButton.setToolTipText("Reset Region of Interest to full frame");
+      zoomOutButton.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class,
+            "/org/micromanager/icons/zoom_out.png"));
+      zoomOutButton.setToolTipText("Zoom out");
       zoomOutButton.setFont(new Font("Arial", Font.PLAIN, 10));
-      getContentPane().add(zoomOutButton);
-      springLayout_.putConstraint(SpringLayout.SOUTH, zoomOutButton, 174, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, zoomOutButton, 154, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, zoomOutButton, 199, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, zoomOutButton, 157, SpringLayout.WEST, getContentPane());
+      topPanel.add(zoomOutButton);
+      topLayout.putConstraint(SpringLayout.SOUTH, zoomOutButton, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, zoomOutButton, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, zoomOutButton, 143,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, zoomOutButton, 113,
+            SpringLayout.WEST, topPanel);
 
-      final JButton addGroupButton_ = new JButton();
-      addGroupButton_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent arg0) {
-            configPad_.addGroup();
-            updateGUI();
+      // Profile
+      // -------
+
+      final JLabel profileLabel_ = new JLabel();
+      profileLabel_.setFont(new Font("Arial", Font.BOLD, 11));
+      profileLabel_.setText("Profile");
+      topPanel.add(profileLabel_);
+      topLayout.putConstraint(SpringLayout.SOUTH, profileLabel_, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, profileLabel_, 140,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, profileLabel_, 217,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, profileLabel_, 154,
+            SpringLayout.WEST, topPanel);
+
+      final JButton buttonProf = new JButton();
+      buttonProf.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/chart_curve.png"));
+      buttonProf.setFont(new Font("Arial", Font.PLAIN, 10));
+      buttonProf.setToolTipText("Open line profile window (requires line selection)");
+      buttonProf.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            openLineProfileWindow();
          }
       });
-      addGroupButton_.setToolTipText("Add new group of presets");
-      addGroupButton_.setText("+");
-      getContentPane().add(addGroupButton_);
-      springLayout_.putConstraint(SpringLayout.EAST, addGroupButton_, 337, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, addGroupButton_, 295, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, addGroupButton_, 173, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, addGroupButton_, 155, SpringLayout.NORTH, getContentPane());
+      // buttonProf.setText("Profile");
+      topPanel.add(buttonProf);
+      topLayout.putConstraint(SpringLayout.SOUTH, buttonProf, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, buttonProf, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, buttonProf, 183,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, buttonProf, 153,
+            SpringLayout.WEST, topPanel);
 
-      final JButton removeGroupButton_ = new JButton();
-      removeGroupButton_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent arg0) {
-            if (configPad_.removeGroup()) {
-               configChanged_ = true;
-               updateGUI();
-               setConfigSaveButtonStatus(configChanged_);
+      // Autofocus
+      // -------
+
+      final JLabel autofocusLabel_ = new JLabel();
+      autofocusLabel_.setFont(new Font("Arial", Font.BOLD, 11));
+      autofocusLabel_.setText("Autofocus");
+      topPanel.add(autofocusLabel_);
+      topLayout.putConstraint(SpringLayout.SOUTH, autofocusLabel_, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, autofocusLabel_, 140,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, autofocusLabel_, 274,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, autofocusLabel_, 194,
+            SpringLayout.WEST, topPanel);
+
+      buttonAutofocus_ = new JButton();
+      buttonAutofocus_.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/find.png"));
+      buttonAutofocus_.setFont(new Font("Arial", Font.PLAIN, 10));
+      buttonAutofocus_.setToolTipText("Autofocus now");
+      buttonAutofocus_.addActionListener(new ActionListener() {
+         public void actionPerformed(ActionEvent e) {
+            if (afMgr_.getDevice() != null) {
+               new Thread() {
+                  @Override
+                  public void run() {
+                     try {
+                       boolean lmo  = isLiveModeOn();
+                      if(lmo)
+                           enableLiveMode(false);
+                       afMgr_.getDevice().fullFocus();
+                       if(lmo)
+                           enableLiveMode(true);
+                     } catch (MMException ex) {
+                        ReportingUtils.logError(ex);
+                     }
+                  }
+               }.start(); // or any other method from Autofocus.java API
             }
          }
       });
-      removeGroupButton_.setToolTipText("Remove selected group of presets");
-      removeGroupButton_.setText("-");
-      getContentPane().add(removeGroupButton_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, removeGroupButton_, 173, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, removeGroupButton_, 155, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, removeGroupButton_, 382, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, removeGroupButton_, 340, SpringLayout.WEST, getContentPane());
+      topPanel.add(buttonAutofocus_);
+      topLayout.putConstraint(SpringLayout.SOUTH, buttonAutofocus_, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, buttonAutofocus_, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, buttonAutofocus_, 223,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, buttonAutofocus_, 193,
+            SpringLayout.WEST, topPanel);
 
-      final JButton editPreset_ = new JButton();
-      editPreset_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent arg0) {
-            if (configPad_.editPreset()) {
-               configChanged_ = true;
-               updateGUI();
-               setConfigSaveButtonStatus(configChanged_);
-            }
+      buttonAutofocusTools_ = new JButton();
+      buttonAutofocusTools_.setIcon(SwingResourceManager.getIcon(
+            MMStudioMainFrame.class,
+            "/org/micromanager/icons/wrench_orange.png"));
+      buttonAutofocusTools_.setFont(new Font("Arial", Font.PLAIN, 10));
+      buttonAutofocusTools_.setToolTipText("Set autofocus options");
+      buttonAutofocusTools_.addActionListener(new ActionListener() {
+
+         public void actionPerformed(ActionEvent e) {
+            showAutofocusDialog();
          }
       });
-      editPreset_.setToolTipText("Edit selected preset");
-      editPreset_.setText("Edit");
-      getContentPane().add(editPreset_);
-      springLayout_.putConstraint(SpringLayout.EAST, editPreset_, -7, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, editPreset_, -72, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, configPad_, 0, SpringLayout.NORTH, editPreset_);
-      springLayout_.putConstraint(SpringLayout.NORTH, configPad_, 21, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, editPreset_, 173, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, editPreset_, 155, SpringLayout.NORTH, getContentPane());
-
-      final JButton addPresetButton_ = new JButton();
-      addPresetButton_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent arg0) {
-            if(configPad_.addPreset()) {
-               configChanged_ = true;
-               updateGUI();
-               setConfigSaveButtonStatus(configChanged_);
-            }
-         }
-      });
-      addPresetButton_.setToolTipText("Add preset");
-      addPresetButton_.setText("+");
-      getContentPane().add(addPresetButton_);
-      springLayout_.putConstraint(SpringLayout.EAST, addPresetButton_, -114, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, addPresetButton_, -156, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, addPresetButton_, 173, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, addPresetButton_, 155, SpringLayout.NORTH, getContentPane());
-
-      final JButton removePresetButton_ = new JButton();
-      removePresetButton_.addActionListener(new ActionListener() {
-         public void actionPerformed(ActionEvent arg0) {
-            if (configPad_.removePreset()) {
-               configChanged_ = true;
-               updateGUI();
-               setConfigSaveButtonStatus(configChanged_);
-            }
-         }
-      });
-      removePresetButton_.setToolTipText("Remove currently selected preset");
-      removePresetButton_.setText("-");
-      getContentPane().add(removePresetButton_);
-      springLayout_.putConstraint(SpringLayout.EAST, removePresetButton_, -72, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, removePresetButton_, -114, SpringLayout.EAST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, removePresetButton_, 173, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, removePresetButton_, 155, SpringLayout.NORTH, getContentPane());
+      topPanel.add(buttonAutofocusTools_);
+      topLayout.putConstraint(SpringLayout.SOUTH, buttonAutofocusTools_, 174,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, buttonAutofocusTools_, 154,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, buttonAutofocusTools_, 256,
+            SpringLayout.WEST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, buttonAutofocusTools_, 226,
+            SpringLayout.WEST, topPanel);
+      
+  
 
       saveConfigButton_ = new JButton();
       saveConfigButton_.addActionListener(new ActionListener() {
+
          public void actionPerformed(ActionEvent arg0) {
             saveConfigPresets();
          }
@@ -1054,281 +2162,285 @@ public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
       saveConfigButton_.setToolTipText("Save current presets to the configuration file");
       saveConfigButton_.setText("Save");
       saveConfigButton_.setEnabled(false);
-      getContentPane().add(saveConfigButton_);
-      springLayout_.putConstraint(SpringLayout.SOUTH, saveConfigButton_, 20, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, saveConfigButton_, 2, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.EAST, saveConfigButton_, 500, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, saveConfigButton_, 435, SpringLayout.WEST, getContentPane());
+      topPanel.add(saveConfigButton_);
+      topLayout.putConstraint(SpringLayout.SOUTH, saveConfigButton_, 20,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.NORTH, saveConfigButton_, 2,
+            SpringLayout.NORTH, topPanel);
+      topLayout.putConstraint(SpringLayout.EAST, saveConfigButton_, -5,
+            SpringLayout.EAST, topPanel);
+      topLayout.putConstraint(SpringLayout.WEST, saveConfigButton_, -80,
+            SpringLayout.EAST, topPanel);
 
-      final JButton refreshButton_1 = new JButton();
-      refreshButton_1.setIcon(SwingResourceManager.getIcon(MMStudioMainFrame.class, "icons/application_view_list.png"));
-      refreshButton_1.addActionListener(new ActionListener() {
-         private PositionListDlg posListDlg_;
-
-         public void actionPerformed(ActionEvent arg0) {
-            if (posListDlg_ == null) {
-               posListDlg_ = new PositionListDlg(core_, posList_);
-            }
-            posListDlg_.setVisible(true);
-          }
-      });
-      refreshButton_1.setToolTipText("Refresh all GUI controls directly from the hardware");
-      refreshButton_1.setFont(new Font("Arial", Font.PLAIN, 10));
-      refreshButton_1.setText("XY List");
-      getContentPane().add(refreshButton_1);
-      springLayout_.putConstraint(SpringLayout.EAST, refreshButton_1, 95, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.WEST, refreshButton_1, 7, SpringLayout.WEST, getContentPane());
-      springLayout_.putConstraint(SpringLayout.SOUTH, refreshButton_1, 136, SpringLayout.NORTH, getContentPane());
-      springLayout_.putConstraint(SpringLayout.NORTH, refreshButton_1, 115, SpringLayout.NORTH, getContentPane());
+      // Add our own keyboard manager that handles Micro-Manager shortcuts
+      MMKeyDispatcher mmKD = new MMKeyDispatcher(gui_);
+      KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(mmKD);
 
    }
-   
-   private void handleException (Exception e) {
-      String errText = "Exception occurred: " + e.getMessage();
+
+   private void handleException(Exception e, String msg) {
+      String errText = "Exception occurred: ";
+      if (msg.length() > 0) {
+         errText += msg + " -- ";
+      }
+      if (options_.debugLogEnabled_) {
+         errText += e.getMessage();
+      } else {
+         errText += e.toString() + "\n";
+         ReportingUtils.showError(e);
+      }
       handleError(errText);
    }
-   
+
+   private void handleException(Exception e) {
+      handleException(e, "");
+   }
+
    private void handleError(String message) {
-      if (timer_ != null) {
+      if (isLiveModeOn()) {
+         // Should we always stop live mode on any error?
          enableLiveMode(false);
       }
-      
-//      if (toggleButtonLive_ != null)
-//         toggleButtonLive_.setSelected(false);
-      JOptionPane.showMessageDialog(this, message);     
+      JOptionPane.showMessageDialog(this, message);
+      core_.logMessage(message);
    }
-   
+
+   public void makeActive() {
+      toFront();
+   }
+
+   private void setExposure() {
+      try {
+         if (!isLiveModeOn()) {
+            core_.setExposure(NumberUtils.displayStringToDouble(textFieldExp_.getText()));
+         } else {
+            liveModeTimer_.stop();
+            core_.setExposure(NumberUtils.displayStringToDouble(textFieldExp_.getText()));
+            try {
+               liveModeTimer_.begin();
+            } catch (Exception e) {
+               ReportingUtils.showError("Couldn't restart live mode");
+               liveModeTimer_.stop();
+            }
+         }
+        
+
+         // Display the new exposure time
+         double exposure = core_.getExposure();
+         textFieldExp_.setText(NumberUtils.doubleToDisplayString(exposure));
+
+      } catch (Exception exp) {
+         // Do nothing.
+      }
+   }
+
+   public boolean getConserveRamOption() {
+      return options_.conserveRam_;
+   }
+
+   public boolean getAutoreloadOption() {
+      return options_.autoreloadDevices_;
+   }
+
    private void updateTitle() {
       this.setTitle("System: " + sysConfigFile_);
    }
-   
-   private void updateHistogram(){
-      if (isImageWindowOpen()) {
-         //ImagePlus imp = IJ.getImage();
-         ImagePlus imp = imageWin_.getImagePlus();
-         if (imp != null) {
-            contrastPanel_.setImagePlus(imp);
-            contrastPanel_.setContrastSettings(contrastSettings8_, contrastSettings16_);
-            contrastPanel_.update();
-         }
-         //contrastPanel_.setImagePlus(imageWin_.getImagePlus());
-//         ContrastSettings cs = imageWin_.getCurrentContrastSettings();
-      }
-   }
-   
-   private void updateLineProfile(){
-      if (!isImageWindowOpen() || profileWin_ == null || !profileWin_.isShowing())
+
+   public void updateLineProfile() {
+      if (WindowManager.getCurrentWindow() == null || profileWin_ == null
+            || !profileWin_.isShowing()) {
          return;
-      
-      calculateLineProfileData(imageWin_.getImagePlus());
+      }
+
+      calculateLineProfileData(WindowManager.getCurrentImage());
       profileWin_.setData(lineProfileData_);
    }
-   
-   private void openLineProfileWindow(){
-      if (imageWin_ == null || imageWin_.isClosed())
+
+   private void openLineProfileWindow() {
+      if (WindowManager.getCurrentWindow() == null || WindowManager.getCurrentWindow().isClosed()) {
          return;
-      calculateLineProfileData(imageWin_.getImagePlus());
-      if (lineProfileData_ == null)
+      }
+      calculateLineProfileData(WindowManager.getCurrentImage());
+      if (lineProfileData_ == null) {
          return;
+      }
       profileWin_ = new GraphFrame();
       profileWin_.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
       profileWin_.setData(lineProfileData_);
       profileWin_.setAutoScale();
       profileWin_.setTitle("Live line profile");
+      profileWin_.setBackground(guiColors_.background.get((options_.displayBackground_)));
+      addMMBackgroundListener(profileWin_);
       profileWin_.setVisible(true);
    }
-   
-   private void calculateLineProfileData(ImagePlus imp){
+
+   public Rectangle getROI() throws MMScriptException {
+      // ROI values are given as x,y,w,h in individual one-member arrays (pointers in C++):
+      int[][] a = new int[4][1];
+      try {
+         core_.getROI(a[0], a[1], a[2], a[3]);
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+      // Return as a single array with x,y,w,h:
+      return new Rectangle(a[0][0], a[1][0], a[2][0], a[3][0]);
+   }
+
+   private void calculateLineProfileData(ImagePlus imp) {
       // generate line profile
       Roi roi = imp.getRoi();
-      if (roi==null || !roi.isLine()) {
-         
+      if (roi == null || !roi.isLine()) {
+
          // if there is no line ROI, create one
          Rectangle r = imp.getProcessor().getRoi();
          int iWidth = r.width;
          int iHeight = r.height;
          int iXROI = r.x;
          int iYROI = r.y;
-         if (roi==null) {
-            iXROI += iWidth/2;
-            iYROI += iHeight/2; 
+         if (roi == null) {
+            iXROI += iWidth / 2;
+            iYROI += iHeight / 2;
          }
-         
-         roi = new Line(iXROI-iWidth/4, iYROI-iWidth/4, iXROI + iWidth/4, iYROI + iHeight/4);
+
+         roi = new Line(iXROI - iWidth / 4, iYROI - iWidth / 4, iXROI
+               + iWidth / 4, iYROI + iHeight / 4);
          imp.setRoi(roi);
          roi = imp.getRoi();
       }
 
-      ImageProcessor ip = imp.getProcessor();     
+      ImageProcessor ip = imp.getProcessor();
       ip.setInterpolate(true);
-      Line line = (Line)roi;
-      
-      if (lineProfileData_ == null)
+      Line line = (Line) roi;
+
+      if (lineProfileData_ == null) {
          lineProfileData_ = new GraphData();
+      }
       lineProfileData_.setData(line.getPixels());
    }
-   
+
+   public void setROI(Rectangle r) throws MMScriptException {
+      boolean liveRunning = false;
+      if (isLiveModeOn()) {
+         liveRunning = true;
+         enableLiveMode(false);
+      }
+      try {
+         core_.setROI(r.x, r.y, r.width, r.height);
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+      updateStaticInfo();
+      if (liveRunning) {
+         enableLiveMode(true);
+      }
+
+   }
+
    private void setROI() {
-      if (imageWin_ == null || imageWin_.isClosed())
+      ImagePlus curImage = WindowManager.getCurrentImage();
+      if (curImage == null) {
          return;
-      
-      Roi roi = imageWin_.getImagePlus().getRoi();
+      }
+
+      Roi roi = curImage.getRoi();
       
       try {
-         if (roi==null) {
+         if (roi == null) {
             // if there is no ROI, create one
-            ImagePlus imp = imageWin_.getImagePlus();
-            Rectangle r = imp.getProcessor().getRoi();
+            Rectangle r = curImage.getProcessor().getRoi();
             int iWidth = r.width;
             int iHeight = r.height;
             int iXROI = r.x;
             int iYROI = r.y;
-            if (roi==null) {
+            if (roi == null) {
                iWidth /= 2;
                iHeight /= 2;
-               iXROI += iWidth/2;
-               iYROI += iHeight/2; 
+               iXROI += iWidth / 2;
+               iYROI += iHeight / 2;
             }
-            
-            imp.setRoi(iXROI, iYROI, iWidth, iHeight);
-            roi = imp.getRoi();
+
+            curImage.setRoi(iXROI, iYROI, iWidth, iHeight);
+            roi = curImage.getRoi();
          }
-         
+
          if (roi.getType() != Roi.RECTANGLE) {
             handleError("ROI must be a rectangle.\nUse the ImageJ rectangle tool to draw the ROI.");
             return;
          }
-         
+
          Rectangle r = roi.getBoundingRect();
-         core_.setROI(r.x, r.y, r.width, r.height);
-         updateStaticInfo();
-         
+         // if we already had an ROI defined, correct for the offsets
+         Rectangle cameraR =  getROI();
+         r.x += cameraR.x;
+         r.y += cameraR.y;
+         // Stop (and restart) live mode if it is running
+         setROI(r);
+
       } catch (Exception e) {
-         handleException(e);
-      }      
+         ReportingUtils.showError(e);
+      }
    }
-   
+
    private void clearROI() {
       try {
+         boolean liveRunning = false;
+         if (isLiveModeOn()) {
+            liveRunning = true;
+            enableLiveMode(false);
+         }
          core_.clearROI();
-         updateStaticInfo();         
+         updateStaticInfo();
+         if (liveRunning) {
+            enableLiveMode(true);
+         }
+
       } catch (Exception e) {
-         handleException(e);
-      }      
-   }
-     
-   private boolean openImageWindow(){
-      try {
-         ImageProcessor ip;
-         long byteDepth = core_.getBytesPerPixel();
-         if (byteDepth == 1){
-            ip = new ByteProcessor((int)core_.getImageWidth(), (int)core_.getImageHeight());
-            if (contrastSettings8_.getRange() == 0.0)
-               ip.setMinAndMax(0, 255);
-            else
-               ip.setMinAndMax(contrastSettings8_.min, contrastSettings8_.max);
-         } else if (byteDepth == 2) {
-            ip = new ShortProcessor((int)core_.getImageWidth(), (int)core_.getImageHeight());
-            if (contrastSettings16_.getRange() == 0.0)
-               ip.setMinAndMax(0, 65535);
-            else
-               ip.setMinAndMax(contrastSettings16_.min, contrastSettings16_.max);
-         }
-         else if (byteDepth == 0) {
-            handleError("Imaging device not initialized");
-            return false;
-         }
-         else {
-            handleError("Unsupported pixel depth: " + core_.getBytesPerPixel() + " bytes.");
-            return false;
-         }
-         ip.setColor(Color.black);
-         ip.fill();
-         ImagePlus imp = new ImagePlus(LIVE_WINDOW_TITLE, ip);
-         if (imageWin_ != null) {
-            imageWin_.dispose();
-            imageWin_.savePosition();
-            imageWin_ = null;
-         }
-         
-         imageWin_ = new MMImageWindow(imp);
-         imageWin_.setContrastSettings(contrastSettings8_, contrastSettings16_);
-                  
-         // add listener to the IJ window to detect when it closes
-         WindowListener wndCloser = new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-               imageWin_ = null;
-               contrastPanel_.setImagePlus(null);
-            }
-         };
-         
-         WindowListener wndFocus = new WindowAdapter() {
-            public void windowGainedFocus(WindowEvent e) {
-               updateHistogram();
-            }
-         };
-         
-         WindowListener wndActive = new WindowAdapter() {
-            public void windowActivated(WindowEvent e) {
-               updateHistogram();
-            }
-         };
-         
-         imageWin_.addWindowListener(wndCloser);
-         imageWin_.addWindowListener(wndFocus);
-         imageWin_.addWindowListener(wndActive);
-         
-      } catch (Exception e){
-         handleException(e);
-         return false;
+         ReportingUtils.showError(e);
       }
-      return true;
    }
-   
+
    /**
     * Returns instance of the core uManager object;
     */
    public CMMCore getMMCore() {
       return core_;
    }
-      
-   protected void saveConfigPresets() {
+
+   /**
+    * Returns singleton instance of MMStudioMainFrame
+    */
+   public static MMStudioMainFrame getInstance() {
+      return gui_;
+   }
+
+   public MetadataPanel getMetadataPanel() {
+      return metadataPanel_;
+   }
+
+   public final void setExitStrategy(boolean closeOnExit) {
+      if (closeOnExit)
+         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+      else
+         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+   }
+
+   public void saveConfigPresets() {
       MicroscopeModel model = new MicroscopeModel();
       try {
          model.loadFromFile(sysConfigFile_);
          model.createSetupConfigsFromHardware(core_);
-         JFileChooser fc = new JFileChooser();
-         boolean saveFile = true;
-         File f; 
-         do {         
-            fc.setSelectedFile(new File(model.getFileName()));
-            int retVal = fc.showSaveDialog(this);
-            if (retVal == JFileChooser.APPROVE_OPTION) {
-               f = fc.getSelectedFile();
-               
-               // check if file already exists
-               if( f.exists() ) { 
-                  int sel = JOptionPane.showConfirmDialog(this,
-                        "Overwrite " + f.getName(),
-                        "File Save",
-                        JOptionPane.YES_NO_OPTION);
-                  
-                  if(sel == JOptionPane.YES_OPTION)
-                     saveFile = true;
-                  else
-                     saveFile = false;
-               }
-            } else {
-               return; 
-            }
-         } while (saveFile == false);
-         
-         model.saveToFile(f.getAbsolutePath());
-         sysConfigFile_ = f.getAbsolutePath();
-         configChanged_ = false;
-         setConfigSaveButtonStatus(configChanged_);
+         model.createResolutionsFromHardware(core_);
+         File f = FileDialogs.save(this, "Save the configuration file", MM_CONFIG_FILE);
+         if (f != null) {
+            model.saveToFile(f.getAbsolutePath());
+            sysConfigFile_ = f.getAbsolutePath();
+            mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);
+            configChanged_ = false;
+            setConfigSaveButtonStatus(configChanged_);
+            updateTitle();
+         }
       } catch (MMConfigFileException e) {
-         handleException(e);
+         ReportingUtils.showError(e);
       }
    }
 
@@ -1336,438 +2448,825 @@ public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
       saveConfigButton_.setEnabled(changed);
    }
 
+   public String getAcqDirectory() {
+      return openAcqDirectory_;
+   }
+   
    /**
-    * Open an existing acquisition directory and build image5d window.
+    * Get currently used configuration file
+    * @return - Path to currently used configuration file
+    */
+   public String getSysConfigFile() {
+      return sysConfigFile_;
+   }
+
+   public void setAcqDirectory(String dir) {
+      openAcqDirectory_ = dir;
+   }
+
+    /**
+    * Open an existing acquisition directory and build viewer window.
     *
     */
-   protected void openAcquisitionData() {
-      
+   public void openAcquisitionData() {
+
       // choose the directory
       // --------------------
-      
-      JFileChooser fc = new JFileChooser();
-      fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-      fc.setSelectedFile(new File(openAcqDirectory_));
-      int retVal = fc.showOpenDialog(this);
-      if (retVal == JFileChooser.APPROVE_OPTION) {
-         File f = fc.getSelectedFile();
+      File f = FileDialogs.openDir(this, "Please select an image data set", MM_DATA_SET);
+
+      if (f != null) {
          if (f.isDirectory()) {
             openAcqDirectory_ = f.getAbsolutePath();
          } else {
             openAcqDirectory_ = f.getParent();
          }
+
+         openAcquisitionData(openAcqDirectory_);
          
-         ProgressBar progressBar = null;
-         AcquisitionData ad = new AcquisitionData();
+      }
+   }
+
+   public void openAcquisitionData(String dir) {
+               String rootDir = new File(dir).getAbsolutePath();
+         String name = new File(dir).getName();
+         rootDir= rootDir.substring(0, rootDir.length() - (name.length() + 1));
          try {
-            
-            // attempt to open metafile
-            ad.load(openAcqDirectory_);
-                        
-            // create image 5d
-            Image5D img5d = new Image5D(openAcqDirectory_, ad.getImageJType(), ad.getImageWidth(),
-                  ad.getImageHeight(), ad.getNumberOfChannels(), ad.getNumberOfSlices(),
-                  ad.getNumberOfFrames(), false);
-            
-            Color colors[] = ad.getChannelColors();
-            String names[] = ad.getChannelNames();
-            for (int i=0; i<ad.getNumberOfChannels(); i++) {
-               
-               ChannelCalibration chcal = new ChannelCalibration();
-               // set channel name
-               chcal.setLabel(names[i]);
-               img5d.setChannelCalibration(i+1, chcal);
-               
-               // set color
-               img5d.setChannelColorModel(i+1, ChannelDisplayProperties.createModelFromColor(colors[i]));            
-            }
-            
-            progressBar = new ProgressBar ("Opening File...", 0, ad.getNumberOfChannels() * ad.getNumberOfFrames() * ad.getNumberOfSlices() );
-            // set pixels
-            int singleImageCounter = 0;
-            for (int i=0; i<ad.getNumberOfFrames(); i++) {
-               for (int j=0; j<ad.getNumberOfChannels(); j++)
-                  for (int k=0; k<ad.getNumberOfSlices(); k++) {
-                     img5d.setCurrentPosition(0, 0, j, k, i);
-                     // read the file
-                     
-                     // insert pixels into the 5d image
-                     img5d.setPixels(ad.getPixels(i, j, k));
-                     
-                     // set display settings for channels
-                     if (k==0 && i==0) {
-                        DisplaySettings ds[] = ad.getChannelDisplaySettings();
-                        if (ds != null) {
-                           // display properties are recorded in metadata use them...
-                           double min = ds[j].min;
-                           double max = ds[j].max;
-                           img5d.setChannelMinMax(j+1, min, max);
-                        } else {
-                           // ...if not, autoscale channels based on the first slice of the first frame
-                           ImageStatistics stats = img5d.getStatistics(); // get uncalibrated stats
-                           double min = stats.min;
-                           double max = stats.max;
-                           img5d.setChannelMinMax(j+1, min, max);
-                        }
-                     }
-                  }
-               singleImageCounter++;
-               progressBar.setProgress(singleImageCounter);
-            }
-            // pop-up 5d image window
-            Image5DWindow i5dWin = new Image5DWindow(img5d);
-            if (ad.getNumberOfChannels()==1)
-               img5d.setDisplayMode(ChannelControl.ONE_CHANNEL_COLOR);
-            else
-               img5d.setDisplayMode(ChannelControl.OVERLAY);
-            i5dWin.setAcquitionEngine(engine_);
-            i5dWin.setMetadata(ad.getMetadata());
-            img5d.changes = false;
-         } catch (MMAcqDataException e) {
-            handleError(e.getMessage());
-         } finally {
-            if (progressBar != null) {
-               progressBar.setVisible(false);
-               progressBar = null;
-            }
+            acqMgr_.openAcquisition(name, rootDir, true, true, true);
+            acqMgr_.getAcquisition(name).initialize();
+            acqMgr_.closeAcquisition(name);
+         } catch (MMScriptException ex) {
+            ReportingUtils.showError(ex);
+         }
+   }
+
+   protected void zoomOut() {
+      ImageWindow curWin = WindowManager.getCurrentWindow();
+      if (curWin != null) {
+         ImageCanvas canvas = curWin.getCanvas();
+         Rectangle r = canvas.getBounds();
+         canvas.zoomOut(r.width / 2, r.height / 2);
+
+         VirtualAcquisitionDisplay vad = VirtualAcquisitionDisplay.getDisplay(curWin.getImagePlus());
+         if (vad != null) {
+            vad.storeWindowSizeAfterZoom(curWin);
+            vad.updateWindowTitleAndStatus();
          }
       }
    }
 
-   protected void zoomOut() {
-      if (!isImageWindowOpen())
-         return;
-      Rectangle r = imageWin_.getCanvas().getBounds();
-      imageWin_.getCanvas().zoomOut(r.width/2, r.height/2);
-   }
-
    protected void zoomIn() {
-      if (!isImageWindowOpen())
-         return;
-      Rectangle r = imageWin_.getCanvas().getBounds();
-      imageWin_.getCanvas().zoomIn(r.width/2, r.height/2);
+      ImageWindow curWin = WindowManager.getCurrentWindow();
+      if (curWin != null) {
+         ImageCanvas canvas = curWin.getCanvas();
+         Rectangle r = canvas.getBounds();
+         canvas.zoomIn(r.width / 2, r.height / 2);
+         
+         VirtualAcquisitionDisplay vad = VirtualAcquisitionDisplay.getDisplay(curWin.getImagePlus());
+         if (vad != null) {
+            vad.storeWindowSizeAfterZoom(curWin);
+            vad.updateWindowTitleAndStatus();
+         }        
+      }
    }
 
    protected void changeBinning() {
       try {
-         //
+         boolean liveRunning = false;
+         if (isLiveModeOn() ) {
+            liveRunning = true;
+            enableLiveMode(false);
+        } 
+         
          if (isCameraAvailable()) {
             Object item = comboBinning_.getSelectedItem();
-            if (item != null)
+            if (item != null) {
                core_.setProperty(cameraLabel_, MMCoreJ.getG_Keyword_Binning(), item.toString());
+            }
          }
+         updateStaticInfo();
+
+         if (liveRunning) {
+            enableLiveMode(true);
+         }
+
       } catch (Exception e) {
-         handleException(e);
+         ReportingUtils.showError(e);
       }
-      updateStaticInfo();
+
+      
    }
-      
+
    private void createPropertyEditor() {
-      if (propertyBrowser_ != null)
+      if (propertyBrowser_ != null) {
          propertyBrowser_.dispose();
-      
+      }
+
       propertyBrowser_ = new PropertyEditor();
+      propertyBrowser_.setGui(this);
       propertyBrowser_.setVisible(true);
       propertyBrowser_.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
       propertyBrowser_.setCore(core_);
-      propertyBrowser_.setParentGUI(this);
    }
-   
-   private void createScriptingConsole() {
-      if (scriptFrame_ == null || !scriptFrame_.isActive()) {
-         scriptFrame_ = new MMScriptFrame();
-         scriptFrame_.setVisible(true);
-         scriptFrame_.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-         scriptFrame_.insertScriptingObject(SCRIPT_CORE_OBJECT, core_);
-         scriptFrame_.insertScriptingObject(SCRIPT_ACQENG_OBJECT, engine_);
-         scriptFrame_.setParentGUI(this);
+
+   private void createCalibrationListDlg() {
+      if (calibrationListDlg_ != null) {
+         calibrationListDlg_.dispose();
+      }
+
+      calibrationListDlg_ = new CalibrationListDlg(core_);
+      calibrationListDlg_.setVisible(true);
+      calibrationListDlg_.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+      calibrationListDlg_.setParentGUI(this);
+   }
+
+   public CalibrationListDlg getCalibrationListDlg() {
+      if (calibrationListDlg_ == null) {
+         createCalibrationListDlg();
+      }
+      return calibrationListDlg_;
+   }
+
+   private void createScriptPanel() {
+      if (scriptPanel_ == null) {
+         scriptPanel_ = new ScriptPanel(core_, options_, this);
+         scriptPanel_.insertScriptingObject(SCRIPT_CORE_OBJECT, core_);
+         scriptPanel_.insertScriptingObject(SCRIPT_ACQENG_OBJECT, engine_);
+         scriptPanel_.setParentGUI(this);
+         scriptPanel_.setBackground(guiColors_.background.get((options_.displayBackground_)));
+         addMMBackgroundListener(scriptPanel_);
+
       }
    }
-   
-   private void updateStaticInfo(){
+
+   /**
+    * Updates Status line in main window from cached values
+    */
+   private void updateStaticInfoFromCache() {
+      String dimText = "Image info (from camera): " + staticInfo_.width_ + " X " + staticInfo_.height_ + " X "
+            + staticInfo_.bytesPerPixel_ + ", Intensity range: " + staticInfo_.imageBitDepth_ + " bits";
+      dimText += ", " + TextUtils.FMT0.format(staticInfo_.pixSizeUm_ * 1000) + "nm/pix";
+      if (zStageLabel_.length() > 0) {
+         dimText += ", Z=" + TextUtils.FMT2.format(staticInfo_.zPos_) + "um";
+      }
+      if (xyStageLabel_.length() > 0) {
+         dimText += ", XY=(" + TextUtils.FMT2.format(staticInfo_.x_) + "," + TextUtils.FMT2.format(staticInfo_.y_) + ")um";
+      }
+
+      labelImageDimensions_.setText(dimText);
+   }
+
+   public void updateXYPos(double x, double y) {
+      staticInfo_.x_ = x;
+      staticInfo_.y_ = y;
+
+      updateStaticInfoFromCache();
+   }
+
+   public void updateZPos(double z) {
+      staticInfo_.zPos_ = z;
+
+      updateStaticInfoFromCache();
+   }
+
+   public void updateXYPosRelative(double x, double y) {
+      staticInfo_.x_ += x;
+      staticInfo_.y_ += y;
+
+      updateStaticInfoFromCache();
+   }
+
+   public void updateZPosRelative(double z) {
+      staticInfo_.zPos_ += z;
+
+      updateStaticInfoFromCache();
+   }
+
+   public void updateXYStagePosition(){
+
+      double x[] = new double[1];
+      double y[] = new double[1];
       try {
-         double zPos = 0.0;
-         String dimText = "Image size: " + core_.getImageWidth() + " X " + core_.getImageHeight() + " X " + core_.getBytesPerPixel() +
-                           ", Intensity range: " + core_.getImageBitDepth() + " bits";
+         if (xyStageLabel_.length() > 0) 
+            core_.getXYPosition(xyStageLabel_, x, y);
+      } catch (Exception e) {
+          ReportingUtils.showError(e);
+      }
+
+      staticInfo_.x_ = x[0];
+      staticInfo_.y_ = y[0];
+      updateStaticInfoFromCache();
+   }
+
+   private void updatePixSizeUm (double pixSizeUm) {
+      staticInfo_.pixSizeUm_ = pixSizeUm;
+
+      updateStaticInfoFromCache();
+   }
+
+   private void updateStaticInfo() {
+      double zPos = 0.0;
+      double x[] = new double[1];
+      double y[] = new double[1];
+
+      try {
          if (zStageLabel_.length() > 0) {
             zPos = core_.getPosition(zStageLabel_);
-            dimText +=  ", Z=" + zPos + "um";
          }
-         labelImageDimensions_.setText(dimText);         
-         
-      } catch (Exception e){
-         handleException(e);
-      }
-   }
-   
-   private void setShutterButton(boolean state) {
-      if (state) {
-         toggleButtonShutter_.setSelected(true);
-         toggleButtonShutter_.setText("Close");
-      } else {
-         toggleButtonShutter_.setSelected(false);
-         toggleButtonShutter_.setText("Open");
-      }
-   }
-   
-   private void changePixelType() {
-      try {
-         //
-         if (isCameraAvailable()) {
-            Object item = comboPixelType_.getSelectedItem();
-            if (item != null)
-               core_.setProperty(cameraLabel_, MMCoreJ.getG_Keyword_PixelType(), item.toString());
-               long bitDepth = core_.getImageBitDepth();
-               contrastPanel_.setPixelBitDepth((int)bitDepth, true);
-         }         
+         if (xyStageLabel_.length() > 0) {
+            core_.getXYPosition(xyStageLabel_, x, y);
+         }
       } catch (Exception e) {
          handleException(e);
       }
-      updateStaticInfo();
+
+      staticInfo_.width_ = core_.getImageWidth();
+      staticInfo_.height_ = core_.getImageHeight();
+      staticInfo_.bytesPerPixel_ = core_.getBytesPerPixel();
+      staticInfo_.imageBitDepth_ = core_.getImageBitDepth();
+      staticInfo_.pixSizeUm_ = core_.getPixelSizeUm();
+      staticInfo_.zPos_ = zPos;
+      staticInfo_.x_ = x[0];
+      staticInfo_.y_ = y[0];
+
+      updateStaticInfoFromCache();
    }
-      
-   ////////////////////////////////////////////////////////////////////////////
-   // public interface available for scripting access
-   ////////////////////////////////////////////////////////////////////////////
-   
-   public void snapSingleImage(){
+
+   public void toggleShutter() {
       try {
-         core_.setExposure(Double.parseDouble(textFieldExp_.getText()));
-         updateImage();
-      } catch (Exception e){
-         handleException(e);
+         if (!toggleButtonShutter_.isEnabled())
+            return;
+         toggleButtonShutter_.requestFocusInWindow();
+         if (toggleButtonShutter_.getText().equals("Open")) {
+            setShutterButton(true);
+            core_.setShutterOpen(true);
+         } else {
+            core_.setShutterOpen(false);
+            setShutterButton(false);
+         }
+      } catch (Exception e1) {
+         ReportingUtils.showError(e1);
       }
    }
-   
-   public Object getPixels(){
-      if (imageWin_ != null)
-         return imageWin_.getImagePlus().getProcessor().getPixels();
-      
+
+
+   private void setShutterButton(boolean state) {
+      if (state) {
+//         toggleButtonShutter_.setSelected(true);
+         toggleButtonShutter_.setText("Close");
+      } else {
+//         toggleButtonShutter_.setSelected(false);
+         toggleButtonShutter_.setText("Open");
+      }
+   }
+
+   // //////////////////////////////////////////////////////////////////////////
+   // public interface available for scripting access
+   // //////////////////////////////////////////////////////////////////////////
+   public void snapSingleImage() {
+      doSnap();
+   }
+
+   public Object getPixels() {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip != null) {
+         return ip.getProcessor().getPixels();
+      }
+
       return null;
    }
-   
-   public void setPixels(Object obj){
-      if (imageWin_ == null) {
+
+   public void setPixels(Object obj) {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip == null) {
          return;
       }
-      
-      imageWin_.getImagePlus().getProcessor().setPixels(obj);
+      ip.getProcessor().setPixels(obj);
    }
-   
-   public int getImageHeight(){
-      if (imageWin_ != null)
-         return imageWin_.getImagePlus().getHeight();
+
+   public int getImageHeight() {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip != null)
+         return ip.getHeight();
       return 0;
    }
-   
-   public int getImageWidth(){
-      if (imageWin_ != null)
-         return imageWin_.getImagePlus().getWidth();
+
+   public int getImageWidth() {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip != null)
+         return ip.getWidth();
       return 0;
    }
-   
-   public int getImageDepth(){
-      if (imageWin_ != null)
-         return imageWin_.getImagePlus().getBitDepth();
+
+   public int getImageDepth() {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip != null)
+         return ip.getBitDepth();
       return 0;
    }
-   
-   public ImageProcessor getImageProcessor(){
-      if (imageWin_ == null)
+
+   public ImageProcessor getImageProcessor() {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip == null)
          return null;
-      return imageWin_.getImagePlus().getProcessor();
+      return ip.getProcessor();
    }
-   
+
    private boolean isCameraAvailable() {
       return cameraLabel_.length() > 0;
    }
-   
-   public boolean isImageWindowOpen() {
-      if (imageWin_ == null || imageWin_.isClosed())
-         return false;
-      else
-         return true;
-   }
-   
-   public void updateImageGUI() {
-      updateHistogram();
-   }
-   
-   public void enableLiveMode(boolean enable){
-      try {
-         if (enable){
-            if (timer_.isRunning())
-               return;
-            
-            if (!isImageWindowOpen())
-               openImageWindow();
-            
-            // turn off auto shutter and open the shutter
-            //autoShutterCheckBox_.setEnabled(false);
-            autoShutterOrg_ = core_.getAutoShutter();
-            if (shutterLabel_.length() > 0)
-               shutterOrg_ = core_.getShutterOpen();
-            core_.setAutoShutter(false);
-            shutterLabel_ = core_.getShutterDevice();
-            if (shutterLabel_.length() > 0)
-               core_.setShutterOpen(true);
-            timer_.start();
-            toggleButtonLive_.setText("Stop");
-            toggleButtonShutter_.setEnabled(false);
-         } else {
-            if (!timer_.isRunning())
-               return;
-            timer_.stop();
-            toggleButtonLive_.setText("Live");
-            
-            // restore auto shutter and close the shutter
-            if (shutterLabel_.length() > 0)
-               core_.setShutterOpen(shutterOrg_);
-            core_.setAutoShutter(autoShutterOrg_);
-            if (autoShutterOrg_)
-               toggleButtonShutter_.setEnabled(false);
-            else
-               toggleButtonShutter_.setEnabled(true);
-           //autoShutterCheckBox_.setEnabled(autoShutterOrg_);
-         }
-      } catch (Exception err) {
-         JOptionPane.showMessageDialog(this, err.getMessage());     
 
+   /**
+    * Part of ScriptInterface API
+    * Opens the XYPositionList when it is not opened
+    * Adds the current position to the list (same as pressing the "Mark" button)
+    */
+   public void markCurrentPosition() {
+      if (posListDlg_ == null) {
+         showXYPositionList();
+      }
+      if (posListDlg_ != null) {
+         posListDlg_.markPosition();
       }
    }
-    
+
+   /**
+    * Implements ScriptInterface
+    */
+   public AcqControlDlg getAcqDlg() {
+      return acqControlWin_;
+   }
+
+   /**
+    * Implements ScriptInterface
+    */
+   public PositionListDlg getXYPosListDlg() {
+      if (posListDlg_ == null)
+         posListDlg_ = new PositionListDlg(core_, this, posList_, options_);
+      return posListDlg_;
+   }
+
+   /**
+    * Implements ScriptInterface
+    */
+   public boolean isAcquisitionRunning() {
+      if (engine_ == null)
+         return false;
+      return engine_.isAcquisitionRunning();
+   }
+
+   /**
+    * Implements ScriptInterface
+    */
+   public boolean versionLessThan(String version) throws MMScriptException {
+      try {
+         String[] v = VERSION.split(" ", 2);
+         String[] m = v[0].split("\\.", 3);
+         String[] v2 = version.split(" ", 2);
+         String[] m2 = v2[0].split("\\.", 3);
+         for (int i=0; i < 3; i++) {
+            if (Integer.parseInt(m[i]) < Integer.parseInt(m2[i])) {
+               ReportingUtils.showError("This code needs Micro-Manager version " + version + " or greater");
+               return true;
+            }
+            if (Integer.parseInt(m[i]) > Integer.parseInt(m2[i])) {
+               return false;
+            }
+         }
+         if (v2.length < 2 || v2[1].equals("") )
+            return false;
+         if (v.length < 2 ) {
+            ReportingUtils.showError("This code needs Micro-Manager version " + version + " or greater");
+            return true;
+         }
+         if (Integer.parseInt(v[1]) < Integer.parseInt(v2[1])) {
+            ReportingUtils.showError("This code needs Micro-Manager version " + version + " or greater");
+            return false;
+         }
+         return true;
+
+      } catch (Exception ex) {
+         throw new MMScriptException ("Format of version String should be \"a.b.c\"");
+      }
+   } 
+
+    public boolean isLiveModeOn() {
+        return liveModeTimer_ != null && liveModeTimer_.isRunning();
+   }
+   
+   public void enableLiveMode(boolean enable) {
+      if (core_ == null) {
+         return;
+      }
+      if (enable == isLiveModeOn()) {
+         return;
+      }
+      if (enable) {
+         try {
+            if (core_.getCameraDevice().length() == 0) {
+               ReportingUtils.showError("No camera configured");
+               updateButtonsForLiveMode(false);
+               return;
+            }
+            if (liveModeTimer_ == null) {
+               liveModeTimer_ = new LiveModeTimer(33);
+            }
+            liveModeTimer_.begin();
+            enableLiveModeListeners(enable);
+         } catch (Exception e) {
+            ReportingUtils.showError(e);
+            liveModeTimer_.stop();
+            enableLiveModeListeners(false);
+            updateButtonsForLiveMode(false);
+            return;
+         }
+      } else {
+         liveModeTimer_.stop();
+         enableLiveModeListeners(enable);
+      }
+      updateButtonsForLiveMode(enable);
+   }
+
+   public void updateButtonsForLiveMode(boolean enable) {
+      toggleButtonShutter_.setEnabled(!enable);
+      autoShutterCheckBox_.setEnabled(!enable);
+      buttonSnap_.setEnabled(!enable);
+      toAlbumButton_.setEnabled(!enable);
+      toggleButtonLive_.setIcon(enable ? SwingResourceManager.getIcon(MMStudioMainFrame.class,
+              "/org/micromanager/icons/cancel.png")
+              : SwingResourceManager.getIcon(MMStudioMainFrame.class,
+              "/org/micromanager/icons/camera_go.png"));
+      toggleButtonLive_.setSelected(false);
+      toggleButtonLive_.setText(enable ? "Stop Live" : "Live");
+   }
+
+   private void enableLiveModeListeners(boolean enable) {
+      if (enable) {
+         // attach mouse wheel listener to control focus:
+         if (zWheelListener_ == null) 
+            zWheelListener_ = new ZWheelListener(core_, this);         
+         zWheelListener_.start(getImageWin());
+         // attach key listener to control the stage and focus:
+         if (xyzKeyListener_ == null) 
+            xyzKeyListener_ = new XYZKeyListener(core_, this);
+         xyzKeyListener_.start(getImageWin());
+         if (centerAndDragListener_ == null)
+            centerAndDragListener_ = new CenterAndDragListener(core_, this);
+         centerAndDragListener_.start();
+         
+      } else {
+         if (zWheelListener_ != null) 
+            zWheelListener_.stop();
+         if (xyzKeyListener_ != null) 
+            xyzKeyListener_.stop();
+         if (centerAndDragListener_ != null)
+            centerAndDragListener_.stop();
+      }
+   }
+
+   public boolean getLiveMode() {
+      return isLiveModeOn();
+   }
+
    public boolean updateImage() {
       try {
-         if (!isImageWindowOpen()){
-            // stop live acquistion if the window is not open
-            enableLiveMode(false);
-            return true; // nothing to do
+         if (isLiveModeOn()) {
+               enableLiveMode(false);
+               return true; // nothing to do, just show the last image
          }
-         
-         // warn the user if image dimensions do not match the current window
-         if (imageWin_.getImagePlus().getProcessor().getWidth() != core_.getImageWidth() ||
-               imageWin_.getImagePlus().getProcessor().getHeight() != core_.getImageHeight() ||
-               imageWin_.getImagePlus().getBitDepth() != core_.getBytesPerPixel() * 8) {
-            openImageWindow();
+
+         if (WindowManager.getCurrentWindow() == null) {
+            return false;
          }
+
+         ImagePlus ip = WindowManager.getCurrentImage();
          
-         // update image window
          core_.snapImage();
          Object img = core_.getImage();
-         imageWin_.getImagePlus().getProcessor().setPixels(img);
-         imageWin_.getImagePlus().updateAndDraw();
-         imageWin_.getCanvas().paint(imageWin_.getCanvas().getGraphics());
-         
-         // update related windows
-         updateHistogram();
+
+         ip.getProcessor().setPixels(img);
+         ip.updateAndRepaintWindow();
+
+         if (!isCurrentImageFormatSupported()) {
+            return false;
+         }
+       
          updateLineProfile();
-         
-         // update coordinate and pixel info in imageJ by simulating mouse move
-         Point pt = imageWin_.getCanvas().getCursorLoc();
-         imageWin_.getImagePlus().mouseMoved(pt.x, pt.y);
-         
-      } catch (Exception e){
-         handleException(e);
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
          return false;
       }
-      
+
       return true;
    }
-   
-   private void doSnap() {
-      try {
-         if (!isImageWindowOpen())
-            if (!openImageWindow())
-               handleError("Image window open failed");
-         String expStr = textFieldExp_.getText();
-         if (expStr.length() > 0) {
-            core_.setExposure(Double.parseDouble(expStr));
-            updateImage();
-         }
-         else
-            handleError("Exposure field is empty!");
-      } catch (Exception e){
-         handleException(e);
-      }      
+
+   public boolean displayImage(final Object pixels) {
+      return displayImage(pixels, true);
    }
-      
-   public void initializeGUI(){
+
+
+   public boolean displayImage(final Object pixels, boolean wait) {
+      String[] acqs = acqMgr_.getAcqusitionNames();
+      VirtualAcquisitionDisplay virtAcq;
+      if (acqs == null || acqs.length == 0) {
+         ImagePlus ip = WindowManager.getCurrentImage();
+         if (ip instanceof VirtualAcquisitionDisplay.MMImagePlus) {
+            virtAcq = ((VirtualAcquisitionDisplay.MMImagePlus) ip).display_;
+         } else if (ip instanceof VirtualAcquisitionDisplay.MMCompositeImage) {
+            virtAcq = ((VirtualAcquisitionDisplay.MMCompositeImage) ip).display_;
+         } else {
+            return false;
+         }
+      } else {
+         String acqName = acqs[acqs.length - 1];
+         MMAcquisition acq;
+         try {
+            acq = acqMgr_.getAcquisition(acqName);
+         } catch (MMScriptException ex) {
+            ReportingUtils.showError("Can't locate acquisition");
+            return false;
+         }
+         virtAcq = acq.getAcquisitionWindow();
+      }
+
+      try {   
+            JSONObject summary = virtAcq.getImageCache().getSummaryMetadata();
+            int width = MDUtils.getWidth(summary);
+            int height = MDUtils.getHeight(summary);
+            int bitDepth  = MDUtils.getBitDepth(summary);
+            String pixelType = MDUtils.getPixelType(summary);
+            if (height != core_.getImageHeight() || width != core_.getImageWidth() || 
+                    bitDepth != core_.getImageBitDepth()) 
+               return false;
+            TaggedImage ti = ImageUtils.makeTaggedImage(pixels, 0, 0, 0,0, width, height, bitDepth);
+            ti.tags.put("PixelType", pixelType);
+            virtAcq.getImageCache().putImage(ti);
+            virtAcq.showImage(ti, wait);
+            return true;
+      } catch (Exception ex) {
+         ReportingUtils.showError(ex);
+         return false;
+      }
+   }
+
+   public boolean displayImageWithStatusLine(Object pixels, String statusLine) {
+      String[] acqs = acqMgr_.getAcqusitionNames();
+      VirtualAcquisitionDisplay virtAcq;
+      if (acqs == null || acqs.length == 0) {
+         ImagePlus ip = WindowManager.getCurrentImage();
+         if (ip instanceof VirtualAcquisitionDisplay.MMImagePlus) {
+            virtAcq = ((VirtualAcquisitionDisplay.MMImagePlus) ip).display_;
+         } else if (ip instanceof VirtualAcquisitionDisplay.MMCompositeImage) {
+            virtAcq = ((VirtualAcquisitionDisplay.MMCompositeImage) ip).display_;
+         } else {
+            return false;
+         }
+      } else {
+         String acqName = acqs[acqs.length - 1];
+         MMAcquisition acq;
+         try {
+            acq = acqMgr_.getAcquisition(acqName);
+         } catch (MMScriptException ex) {
+            ReportingUtils.showError("Can't locate acquisition");
+            return false;
+         }
+         virtAcq = acq.getAcquisitionWindow();
+      }
       try {
+         JSONObject tags = virtAcq.getImageCache().getLastImageTags();
+         int width = MDUtils.getWidth(tags);
+         int height = MDUtils.getHeight(tags);
+         int depth = MDUtils.getBitDepth(tags);
+         if (height != core_.getImageHeight() || width != core_.getImageWidth()
+                 || depth != core_.getImageBitDepth()) {
+            return false;
+         }
+
+         TaggedImage ti = ImageUtils.makeTaggedImage(pixels, 0, 0, 0, 0, width, height, depth);
+         virtAcq.getImageCache().putImage(ti);
+         virtAcq.showImage(ti);
+         virtAcq.displayStatusLine(statusLine);
+         return true;
+      } catch (Exception ex) {
+         ReportingUtils.logError(ex);
+         return false;
+      }
+   }
+
+   public void displayStatusLine(String statusLine) {
+      ImagePlus ip = WindowManager.getCurrentImage();
+      VirtualAcquisitionDisplay virtAcq;
+      if (ip instanceof VirtualAcquisitionDisplay.MMImagePlus )
+         virtAcq = ((VirtualAcquisitionDisplay.MMImagePlus) ip).display_;
+      else if (ip instanceof VirtualAcquisitionDisplay.MMCompositeImage)
+         virtAcq = ((VirtualAcquisitionDisplay.MMCompositeImage) ip).display_;
+      else
+         return;
+      virtAcq.displayStatusLine(statusLine);
+   }
+
+   private boolean isCurrentImageFormatSupported() {
+      boolean ret = false;
+      long channels = core_.getNumberOfComponents();
+      long bpp = core_.getBytesPerPixel();
+
+      if (channels > 1 && channels != 4 && bpp != 1) {
+         handleError("Unsupported image format.");
+      } else {
+         ret = true;
+      }
+      return ret;
+   }
+
+   public void doSnap() {
+      if (core_.getCameraDevice().length() == 0) {
+         ReportingUtils.showError("No camera configured");
+         return;
+      }
+
+      try {
+         core_.snapImage();
+         long c = core_.getNumberOfCameraChannels();
+         for (int i = 0; i < c; ++i) {
+            displayImage(core_.getTaggedImage(i), (i == c - 1), i);
+         }
+         simpleDisplay_.getImagePlus().getWindow().toFront();
          
+      } catch (Exception ex) {
+         ReportingUtils.showError(ex);
+      }
+   }
+
+   public boolean displayImage(TaggedImage ti) {
+      return displayImage(ti, true, 0);
+   }
+
+   public boolean displayImage(TaggedImage ti, boolean update, int channel) {
+      try {
+         checkSimpleAcquisition(ti);
+         setCursor(new Cursor(Cursor.WAIT_CURSOR));
+         //getAcquisition(SIMPLE_ACQ).toFront();
+         ti.tags.put("Summary", getAcquisition(SIMPLE_ACQ).getSummaryMetadata());
+         ti.tags.put("ChannelIndex", channel);
+         ti.tags.put("PositionIndex", 0);
+         ti.tags.put("SliceIndex", 0);
+         ti.tags.put("FrameIndex", 0);
+         addImage(SIMPLE_ACQ, ti, update, true);
+      } catch (Exception ex) {
+         ReportingUtils.logError(ex);
+         return false;
+      }
+      if (update) {
+         setCursor(new Cursor(Cursor.DEFAULT_CURSOR));
+         updateLineProfile();
+      }
+      return true;
+   }
+
+   public void initializeGUI() {
+      try {
+
          // establish device roles
          cameraLabel_ = core_.getCameraDevice();
          shutterLabel_ = core_.getShutterDevice();
          zStageLabel_ = core_.getFocusDevice();
+         xyStageLabel_ = core_.getXYStageDevice();
          engine_.setZStageDevice(zStageLabel_);
-                  
+
          if (cameraLabel_.length() > 0) {
-            
-            // pixel type combo
-            if (comboPixelType_.getItemCount() > 0)
-               comboPixelType_.removeAllItems();
-            StrVector pixTypes = core_.getAllowedPropertyValues(cameraLabel_, MMCoreJ.getG_Keyword_PixelType());
-            ActionListener[] listeners = comboPixelType_.getActionListeners();
-            for (int i=0; i<listeners.length; i++)            
-               comboPixelType_.removeActionListener(listeners[i]);
-            for (int i=0; i<pixTypes.size(); i++){
-               comboPixelType_.addItem(pixTypes.get(i));
-            }
-            for (int i=0; i<listeners.length; i++)            
-               comboPixelType_.addActionListener(listeners[i]);
-            
+            ActionListener[] listeners;
+
             // binning combo
-            if (comboBinning_.getItemCount() > 0)
+            if (comboBinning_.getItemCount() > 0) {
                comboBinning_.removeAllItems();
-            StrVector binSizes = core_.getAllowedPropertyValues(cameraLabel_, MMCoreJ.getG_Keyword_Binning());
+            }
+            StrVector binSizes = core_.getAllowedPropertyValues(
+                  cameraLabel_, MMCoreJ.getG_Keyword_Binning());
             listeners = comboBinning_.getActionListeners();
-            for (int i=0; i<listeners.length; i++)            
+            for (int i = 0; i < listeners.length; i++) {
                comboBinning_.removeActionListener(listeners[i]);
-            for (int i=0; i<binSizes.size(); i++){
+            }
+            for (int i = 0; i < binSizes.size(); i++) {
                comboBinning_.addItem(binSizes.get(i));
             }
 
-            comboBinning_.setMaximumRowCount((int)binSizes.size());
+            comboBinning_.setMaximumRowCount((int) binSizes.size());
             if (binSizes.size() == 0) {
-                comboBinning_.setEditable(true);
-             } else {
+               comboBinning_.setEditable(true);
+            } else {
                comboBinning_.setEditable(false);
             }
 
-            for (int i=0; i<listeners.length; i++)            
+            for (int i = 0; i < listeners.length; i++) {
                comboBinning_.addActionListener(listeners[i]);
-            
+            }
+
          }
-         
-         updateGUI();
-      } catch (Exception e){
-         handleException(e);
+
+         // active shutter combo
+         try {
+            shutters_ = core_.getLoadedDevicesOfType(DeviceType.ShutterDevice);
+         } catch (Exception e) {
+            ReportingUtils.logError(e);
+         }
+
+         if (shutters_ != null) {
+            String items[] = new String[(int) shutters_.size()];
+            for (int i = 0; i < shutters_.size(); i++) {
+               items[i] = shutters_.get(i);
+            }
+
+            GUIUtils.replaceComboContents(shutterComboBox_, items);
+            String activeShutter = core_.getShutterDevice();
+            if (activeShutter != null) {
+               shutterComboBox_.setSelectedItem(activeShutter);
+            } else {
+               shutterComboBox_.setSelectedItem("");
+            }
+         }
+
+         // Autofocus
+         buttonAutofocusTools_.setEnabled(afMgr_.getDevice() != null);
+         buttonAutofocus_.setEnabled(afMgr_.getDevice() != null);
+
+         // Rebuild stage list in XY PositinList
+         if (posListDlg_ != null) {
+            posListDlg_.rebuildAxisList();
+         }
+
+         updateGUI(true);
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
       }
    }
 
-   public void updateGUI(){
+   public String getVersion() {
+      return VERSION;
+   }
+
+   private void addPluginToMenu(final PluginItem plugin, Class<?> cl) {
+      // add plugin menu items
+
+      final JMenuItem newMenuItem = new JMenuItem();
+      newMenuItem.addActionListener(new ActionListener() {
+
+         public void actionPerformed(final ActionEvent e) {
+            ReportingUtils.logMessage("Plugin command: "
+                  + e.getActionCommand());
+                  plugin.instantiate();
+                  plugin.plugin.show();
+         }
+      });
+      newMenuItem.setText(plugin.menuItem);
       
-      try {         
+      
+      String toolTipDescription = "";
+      try {
+          // Get this static field from the class implementing MMPlugin.
+    	  toolTipDescription = (String) cl.getDeclaredField("tooltipDescription").get(null);
+       } catch (SecurityException e) {
+          ReportingUtils.logError(e);
+          toolTipDescription = "Description not available";
+       } catch (NoSuchFieldException e) {
+    	   toolTipDescription = "Description not available";
+          ReportingUtils.logError(cl.getName() + " fails to implement static String tooltipDescription.");
+       } catch (IllegalArgumentException e) {
+          ReportingUtils.logError(e);
+       } catch (IllegalAccessException e) {
+          ReportingUtils.logError(e);
+       }
+      
+      String mrjProp = System.getProperty("mrj.version");
+      if (mrjProp != null && !mrjProp.equals(null)) // running on a mac
+          newMenuItem.setToolTipText(toolTipDescription);
+      else      
+          newMenuItem.setToolTipText( TooltipTextMaker.addHTMLBreaksForTooltip(toolTipDescription) );
+      
+    	  
+      pluginMenu_.add(newMenuItem);
+      pluginMenu_.validate();
+      menuBar_.validate();
+   }
+
+   public void updateGUI(boolean updateConfigPadStructure) {
+
+      try {
          // establish device roles
          cameraLabel_ = core_.getCameraDevice();
          shutterLabel_ = core_.getShutterDevice();
          zStageLabel_ = core_.getFocusDevice();
-         engine_.setZStageDevice(zStageLabel_);
-         
+         xyStageLabel_ = core_.getXYStageDevice();
+
+         afMgr_.refresh();
+
          // camera settings
-         if (isCameraAvailable())
-         {
+         if (isCameraAvailable()) {
             double exp = core_.getExposure();
-            textFieldExp_.setText(Double.toString(exp));
-            textFieldGain_.setText(core_.getProperty(cameraLabel_, MMCoreJ.getG_Keyword_Gain()));
+            textFieldExp_.setText(NumberUtils.doubleToDisplayString(exp));
             String binSize = core_.getProperty(cameraLabel_, MMCoreJ.getG_Keyword_Binning());
             GUIUtils.setComboSelection(comboBinning_, binSize);
-            String pixType = core_.getProperty(cameraLabel_, MMCoreJ.getG_Keyword_PixelType());
-            GUIUtils.setComboSelection(comboPixelType_, pixType);
-            long bitDepth = core_.getImageBitDepth();
-            contrastPanel_.setPixelBitDepth((int)bitDepth, false);
          }
-           
-         if (!timer_.isRunning()) {
+
+         if (liveModeTimer_ == null || !liveModeTimer_.isRunning()) {
             autoShutterCheckBox_.setSelected(core_.getAutoShutter());
             boolean shutterOpen = core_.getShutterOpen();
             setShutterButton(shutterOpen);
@@ -1776,97 +3275,140 @@ public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
             } else {
                toggleButtonShutter_.setEnabled(true);
             }
-            
-            autoShutterOrg_ = core_.getAutoShutter();
-         }         
-                   
+         }
+
+         // active shutter combo
+         if (shutters_ != null) {
+            String activeShutter = core_.getShutterDevice();
+            if (activeShutter != null) {
+               shutterComboBox_.setSelectedItem(activeShutter);
+            } else {
+               shutterComboBox_.setSelectedItem("");
+            }
+         }
+
          // state devices
-         configPad_.refresh();
-      } catch (Exception e){
-         handleException(e);
+         if (updateConfigPadStructure && (configPad_ != null)) {
+            configPad_.refreshStructure();
+            // Needed to update read-only properties.  May slow things down...
+            core_.updateSystemStateCache();
+         }
+
+         // update Channel menus in Multi-dimensional acquisition dialog
+         updateChannelCombos();
+
+         
+
+      } catch (Exception e) {
+         ReportingUtils.logError(e);
       }
-      
+
       updateStaticInfo();
       updateTitle();
+
    }
-   
+
    public boolean okToAcquire() {
-      return !timer_.isRunning();
+      return !isLiveModeOn();
    }
-   
-   public void stopAllActivity(){
+
+   public void stopAllActivity() {
       enableLiveMode(false);
    }
-   
-   public void refreshImage(){
-      if (imageWin_ != null)
-         imageWin_.getImagePlus().updateAndDraw();     
-   }
-  
-   private void cleanupOnClose() {
-      timer_.stop();
-      if (imageWin_ != null) {
-         imageWin_.close();
-         imageWin_.dispose();
+
+   private boolean cleanupOnClose() {
+      // NS: Save config presets if they were changed.
+      if (configChanged_) {
+         Object[] options = {"Yes", "No"};
+         int n = JOptionPane.showOptionDialog(null,
+               "Save Changed Configuration?", "Micro-Manager",
+               JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE,
+               null, options, options[0]);
+         if (n == JOptionPane.YES_OPTION) {
+            saveConfigPresets();
+         }
       }
+      if (liveModeTimer_ != null)
+         liveModeTimer_.stop();
       
-      if (histWin_ != null)
-         histWin_.dispose();
-      
-      if (profileWin_ != null)
+      if (!WindowManager.closeAllWindows())
+         return false;
+
+      if (profileWin_ != null) {
+         removeMMBackgroundListener(profileWin_);
          profileWin_.dispose();
-      
-      if (scriptFrame_ != null)
-         scriptFrame_.dispose();
-      
-      if (propertyBrowser_ != null)
-         propertyBrowser_.dispose();
-      
-      if (acqControlWin_ != null)
-         acqControlWin_.dispose();
-      
-      if (engine_ != null)
-         engine_.shutdown();
-      
-      try {
-         core_.reset();
-      } catch(Exception err) {
-         handleException(err);
       }
+
+      if (scriptPanel_ != null) {
+         removeMMBackgroundListener(scriptPanel_);
+         scriptPanel_.closePanel();
+      }
+
+      if (propertyBrowser_ != null) {
+         removeMMBackgroundListener(propertyBrowser_);
+         propertyBrowser_.dispose();
+      }
+
+      if (acqControlWin_ != null) {
+         removeMMBackgroundListener(acqControlWin_);
+         acqControlWin_.close();
+      }
+
+      if (engine_ != null) {
+         engine_.shutdown();
+      }
+
+      if (afMgr_ != null) {
+         afMgr_.closeOptionsDialog();
+      }
+
+      // dispose plugins
+      for (int i = 0; i < plugins_.size(); i++) {
+         MMPlugin plugin = (MMPlugin) plugins_.get(i).plugin;
+         if (plugin != null) {
+            plugin.dispose();
+         }
+      }
+
+      synchronized (shutdownLock_) {
+         try {
+            if (core_ != null){
+               core_.delete();
+               core_ = null;
+            }
+         } catch (Exception err) {
+            ReportingUtils.showError(err);
+         }
+      }
+      return true;
    }
-   
+
    private void saveSettings() {
       Rectangle r = this.getBounds();
-      
+
       mainPrefs_.putInt(MAIN_FRAME_X, r.x);
       mainPrefs_.putInt(MAIN_FRAME_Y, r.y);
       mainPrefs_.putInt(MAIN_FRAME_WIDTH, r.width);
       mainPrefs_.putInt(MAIN_FRAME_HEIGHT, r.height);
-      
-      mainPrefs_.putDouble(CONTRAST_SETTINGS_8_MIN, contrastSettings8_.min);
-      mainPrefs_.putDouble(CONTRAST_SETTINGS_8_MAX, contrastSettings8_.max);
-      mainPrefs_.putDouble(CONTRAST_SETTINGS_16_MIN, contrastSettings16_.min);
-      mainPrefs_.putDouble(CONTRAST_SETTINGS_16_MAX, contrastSettings16_.max);
-      mainPrefs_.putBoolean(MAIN_STRETCH_CONTRAST, contrastPanel_.isContrastStretch());
+      mainPrefs_.putInt(MAIN_FRAME_DIVIDER_POS, this.splitPane_.getDividerLocation());
       
       mainPrefs_.put(OPEN_ACQ_DIR, openAcqDirectory_);
-      
+
       // save field values from the main window
-      // NOTE: automatically restoring these values on startup may cause problems
+      // NOTE: automatically restoring these values on startup may cause
+      // problems
       mainPrefs_.put(MAIN_EXPOSURE, textFieldExp_.getText());
-      if (comboPixelType_.getSelectedItem() != null)
-         mainPrefs_.put(MAIN_PIXEL_TYPE, comboPixelType_.getSelectedItem().toString());
+
       // NOTE: do not save auto shutter state
-//      mainPrefs_.putBoolean(MAIN_AUTO_SHUTTER, autoShutterCheckBox_.isSelected());
+
+      if (afMgr_ != null && afMgr_.getDevice() != null) {
+         mainPrefs_.put(AUTOFOCUS_DEVICE, afMgr_.getDevice().getDeviceName());
+      }
    }
-      
+
    private void loadConfiguration() {
-      JFileChooser fc = new JFileChooser();
-      fc.addChoosableFileFilter(new CfgFileFilter());
-      fc.setSelectedFile(new File(sysConfigFile_));
-      int retVal = fc.showOpenDialog(this);
-      if (retVal == JFileChooser.APPROVE_OPTION) {
-         File f = fc.getSelectedFile();
+      File f = FileDialogs.openFile(this, "Load a config file",MM_CONFIG_FILE);
+      if (f != null) {
          sysConfigFile_ = f.getAbsolutePath();
          configChanged_ = false;
          setConfigSaveButtonStatus(configChanged_);
@@ -1876,177 +3418,1375 @@ public class MMStudioMainFrame extends JFrame implements DeviceControlGUI {
    }
 
    private void loadSystemState() {
-      JFileChooser fc = new JFileChooser();
-      fc.addChoosableFileFilter(new CfgFileFilter());
-      fc.setSelectedFile(new File(sysStateFile_));
-      int retVal = fc.showOpenDialog(this);
-      if (retVal == JFileChooser.APPROVE_OPTION) {
-         File f = fc.getSelectedFile();
+      File f = FileDialogs.openFile(this, "Load a system state file", MM_CONFIG_FILE);
+      if (f != null) {
          sysStateFile_ = f.getAbsolutePath();
          try {
-            //WaitDialog waitDlg = new WaitDialog("Loading saved state, please wait...");
-            //waitDlg.showDialog();
+            // WaitDialog waitDlg = new
+            // WaitDialog("Loading saved state, please wait...");
+            // waitDlg.showDialog();
             core_.loadSystemState(sysStateFile_);
-            //waitDlg.closeDialog();
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+            // waitDlg.closeDialog();
             initializeGUI();
          } catch (Exception e) {
-            handleException(e);
+            ReportingUtils.showError(e);
             return;
          }
       }
    }
-   
- 
 
    private void saveSystemState() {
-      JFileChooser fc = new JFileChooser();
-      boolean saveFile = true;
-      File f;
-      
-      do {         
-         fc.setSelectedFile(new File(sysStateFile_));
-         int retVal = fc.showSaveDialog(this);
-         if (retVal == JFileChooser.APPROVE_OPTION) {
-            f = fc.getSelectedFile();
-            
-            // check if file already exists
-            if( f.exists() ) { 
-               int sel = JOptionPane.showConfirmDialog( this,
-                     "Overwrite " + f.getName(),
-                     "File Save",
-                     JOptionPane.YES_NO_OPTION);
-               
-               if(sel == JOptionPane.YES_OPTION)
-                  saveFile = true;
-               else
-                  saveFile = false;
-            }
-         } else {
-            return; 
+      File f = FileDialogs.save(this,
+              "Save the system state to a config file", MM_CONFIG_FILE);
+
+      if (f != null) {
+         sysStateFile_ = f.getAbsolutePath();
+
+         try {
+            core_.saveSystemState(sysStateFile_);
+         } catch (Exception e) {
+            ReportingUtils.showError(e);
+            return;
          }
-      } while (saveFile == false);
-      
-      sysStateFile_ = f.getAbsolutePath();
-      
-      try {
-         core_.saveSystemState(sysStateFile_);
-      } catch (Exception e) {
-         handleException(e);
-         return;
       }
-   }   
-   
-   private void closeSequence() {
+   }
+
+   public void closeSequence() {
+
+      if (!this.isRunning())
+         return;
+
       if (engine_ != null && engine_.isAcquisitionRunning()) {
-         int result = JOptionPane.showConfirmDialog(this,
+         int result = JOptionPane.showConfirmDialog(
+               this,
                "Acquisition in progress. Are you sure you want to exit and discard all data?",
                "Micro-Manager", JOptionPane.YES_NO_OPTION,
                JOptionPane.INFORMATION_MESSAGE);
-      
-         if (result == JOptionPane.NO_OPTION)
-            return;              
+
+         if (result == JOptionPane.NO_OPTION) {
+            return;
+         }
       }
-      
-      cleanupOnClose();
+
+      stopAllActivity();
+
+      if (!cleanupOnClose())
+         return;
+
+      running_ = false;
+
       saveSettings();
-      options_.saveSettings();
-      dispose();
-      if (!runsAsPlugin_)
-         System.exit(0);
-   }
-   
-   public void applyContrastSettings(ContrastSettings contrast8, ContrastSettings contrast16) {
-      contrastPanel_.applyContrastSettings(contrast8, contrast16);
+      try {
+         configPad_.saveSettings();
+         options_.saveSettings();
+         hotKeys_.saveSettings();
+      } catch (NullPointerException e) {
+         if (core_ != null)
+            this.logError(e);
+      }
+      this.dispose();
+      if (options_.closeOnExit_) {
+         if (!runsAsPlugin_) {
+            System.exit(0);
+         } else {
+            ImageJ ij = IJ.getInstance();
+            if (ij != null) {
+               ij.quit();
+            }
+         }
+      }
+
    }
 
+   public void applyContrastSettings(ContrastSettings contrast8,
+         ContrastSettings contrast16) {
+      ImagePlus img = WindowManager.getCurrentImage();
+      if (img == null)
+         return;
+      if (img.getBytesPerPixel() == 1)     
+         metadataPanel_.setChannelContrast(0, contrast8.min, contrast8.max, contrast8.gamma);
+      else
+         metadataPanel_.setChannelContrast(0, contrast16.min, contrast16.max, contrast16.gamma);
+   }
+
+   @Override
    public ContrastSettings getContrastSettings() {
-      // TODO Auto-generated method stub
-      return null;
+      return metadataPanel_.getChannelContrast(0);
    }
 
    public boolean is16bit() {
-      if (isImageWindowOpen() && imageWin_.getImagePlus().getProcessor() instanceof ShortProcessor)
+      ImagePlus ip = WindowManager.getCurrentImage();
+      if (ip != null && ip.getProcessor() instanceof ShortProcessor) {
          return true;
+      }
       return false;
    }
 
    public boolean isRunning() {
       return running_;
    }
-   
+
    /**
-    * Executes the beanShell script.
-    * This script instance only supports commands directed to the core object.
+    * Executes the beanShell script. This script instance only supports
+    * commands directed to the core object.
     */
    private void executeStartupScript() {
       // execute startup script
       File f = new File(startupScriptFile_);
-      
+
       if (startupScriptFile_.length() > 0 && f.exists()) {
-         WaitDialog waitDlg = new WaitDialog("Executing startup script, please wait...");
+         WaitDialog waitDlg = new WaitDialog(
+               "Executing startup script, please wait...");
          waitDlg.showDialog();
          Interpreter interp = new Interpreter();
          try {
             // insert core object only
             interp.set(SCRIPT_CORE_OBJECT, core_);
-            
-            // read text file and evaluate            
+            interp.set(SCRIPT_ACQENG_OBJECT, engine_);
+            interp.set(SCRIPT_GUI_OBJECT, this);
+
+            // read text file and evaluate
             interp.eval(TextUtils.readTextFile(startupScriptFile_));
          } catch (IOException exc) {
-            handleException(exc);
+            ReportingUtils.showError(exc, "Unable to read the startup script (" + startupScriptFile_ + ").");
          } catch (EvalError exc) {
-            handleException(exc);
+            ReportingUtils.showError(exc);
          } finally {
             waitDlg.closeDialog();
          }
+      } else {
+         if (startupScriptFile_.length() > 0)
+            ReportingUtils.logMessage("Startup script file ("+startupScriptFile_+") not present.");
+      }
+   }
+
+   /**
+    * Loads system configuration from the cfg file.
+    */
+   private boolean loadSystemConfiguration() {
+      boolean result = true;
+
+      saveMRUConfigFiles();
+
+      final WaitDialog waitDlg = new WaitDialog(
+            "Loading system configuration, please wait...");
+
+      waitDlg.setAlwaysOnTop(true);
+      waitDlg.showDialog();
+      this.setEnabled(false);
+
+      try {
+         if (sysConfigFile_.length() > 0) {
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+            core_.waitForSystem();
+            ignorePropertyChanges_ = true; 
+            core_.loadSystemConfiguration(sysConfigFile_);
+            ignorePropertyChanges_ = false; 
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+            
+         }
+      } catch (final Exception err) {
+         GUIUtils.preventDisplayAdapterChangeExceptions();
+       
+         ReportingUtils.showError(err);
+         result = false;
+     } finally { 
+ 		         waitDlg.closeDialog(); 
+ 		      } 
+ 		      setEnabled(true); 
+ 		      initializeGUI();
+
+      updateSwitchConfigurationMenu();
+
+      FileDialogs.storePath(MM_CONFIG_FILE, new File(sysConfigFile_));
+
+      return result;
+   }
+
+   private void saveMRUConfigFiles() {
+      if (0 < sysConfigFile_.length()) {
+         if (MRUConfigFiles_.contains(sysConfigFile_)) {
+            MRUConfigFiles_.remove(sysConfigFile_);
+         }
+         if (maxMRUCfgs_ <= MRUConfigFiles_.size()) {
+            MRUConfigFiles_.remove(maxMRUCfgs_ - 1);
+         }
+         MRUConfigFiles_.add(0, sysConfigFile_);
+         // save the MRU list to the preferences
+         for (Integer icfg = 0; icfg < MRUConfigFiles_.size(); ++icfg) {
+            String value = "";
+            if (null != MRUConfigFiles_.get(icfg)) {
+               value = MRUConfigFiles_.get(icfg).toString();
+            }
+            mainPrefs_.put(CFGFILE_ENTRY_BASE + icfg.toString(), value);
+         }
+      }
+   }
+
+   private void loadMRUConfigFiles() {
+      sysConfigFile_ = mainPrefs_.get(SYSTEM_CONFIG_FILE, sysConfigFile_);
+      // startupScriptFile_ = mainPrefs_.get(STARTUP_SCRIPT_FILE,
+      // startupScriptFile_);
+      MRUConfigFiles_ = new ArrayList<String>();
+      for (Integer icfg = 0; icfg < maxMRUCfgs_; ++icfg) {
+         String value = "";
+         value = mainPrefs_.get(CFGFILE_ENTRY_BASE + icfg.toString(), value);
+         if (0 < value.length()) {
+            File ruFile = new File(value);
+            if (ruFile.exists()) {
+               if (!MRUConfigFiles_.contains(value)) {
+                  MRUConfigFiles_.add(value);
+               }
+            }
+         }
+      }
+      // initialize MRU list from old persistant data containing only SYSTEM_CONFIG_FILE
+      if (0 < sysConfigFile_.length()) {
+         if (!MRUConfigFiles_.contains(sysConfigFile_)) {
+            // in case persistant data is inconsistent
+            if (maxMRUCfgs_ <= MRUConfigFiles_.size()) {
+               MRUConfigFiles_.remove(maxMRUCfgs_ - 1);
+            }
+            MRUConfigFiles_.add(0, sysConfigFile_);
+         }
+      }
+   }
+
+   /**
+    * Opens Acquisition dialog.
+    */
+   private void openAcqControlDialog() {
+      try {
+         if (acqControlWin_ == null) {
+            acqControlWin_ = new AcqControlDlg(engine_, mainPrefs_, this);
+         }
+         if (acqControlWin_.isActive()) {
+            acqControlWin_.setTopPosition();
+         }
+
+         acqControlWin_.setVisible(true);
+         
+         acqControlWin_.repaint();
+
+         // TODO: this call causes a strange exception the first time the
+         // dialog is created
+         // something to do with the order in which combo box creation is
+         // performed
+
+         // acqControlWin_.updateGroupsCombo();
+      } catch (Exception exc) {
+         ReportingUtils.showError(exc,
+               "\nAcquistion window failed to open due to invalid or corrupted settings.\n"
+               + "Try resetting registry settings to factory defaults (Menu Tools|Options).");
       }
    }
    
    /**
-    * Loads sytem configuration from the cfg file.
+    * /** Opens a dialog to record stage positions
     */
-   private void loadSystemConfiguration() {
-      WaitDialog waitDlg = new WaitDialog("Loading system configuration, please wait...");
-      waitDlg.showDialog();
-      try {
-         
-         if (sysConfigFile_.length() > 0) {                  
-            // remember the selected file name
-            core_.loadSystemConfiguration(sysConfigFile_);
-            //waitDlg.closeDialog();                  
-         }
-      } catch (Exception err) {
-         //handleException(err);
-         // handle long error messages
-         waitDlg.closeDialog();  
-         LargeMessageDlg dlg = new LargeMessageDlg("Configuration error log", err.getMessage());
-         dlg.setVisible(true);
+   @Override
+   public void showXYPositionList() {
+      if (posListDlg_ == null) {
+         posListDlg_ = new PositionListDlg(core_, this, posList_, options_);
       }
-      waitDlg.closeDialog();      
+      posListDlg_.setVisible(true);
+   }
+
+   private void updateChannelCombos() {
+      if (this.acqControlWin_ != null) {
+         this.acqControlWin_.updateChannelAndGroupCombo();
+      }
+   }
+
+   @Override
+   public void setConfigChanged(boolean status) {
+      configChanged_ = status;
+      setConfigSaveButtonStatus(configChanged_);
+   }
+
+
+   /**
+    * Returns the current background color
+    * @return
+    */
+   @Override
+   public Color getBackgroundColor() {
+      return guiColors_.background.get((options_.displayBackground_));
+   }
+
+   /*
+    * Changes background color of this window and all other MM windows
+    */
+   @Override
+   public void setBackgroundStyle(String backgroundType) {
+      setBackground(guiColors_.background.get((backgroundType)));
+      paint(MMStudioMainFrame.this.getGraphics());
+      
+      // sets background of all registered Components
+      for (Component comp:MMFrames_) {
+         if (comp != null)
+            comp.setBackground(guiColors_.background.get(backgroundType));
+       }
+   }
+
+   @Override
+   public String getBackgroundStyle() {
+      return options_.displayBackground_;
+   }
+
+   // //////////////////////////////////////////////////////////////////////////
+   // Scripting interface
+   // //////////////////////////////////////////////////////////////////////////
+   private class ExecuteAcq implements Runnable {
+
+      public ExecuteAcq() {
+      }
+
+      @Override
+      public void run() {
+         if (acqControlWin_ != null) {
+            acqControlWin_.runAcquisition();
+         }
+      }
+   }
+
+   private class LoadAcq implements Runnable {
+
+      private String filePath_;
+
+      public LoadAcq(String path) {
+         filePath_ = path;
+      }
+
+      @Override
+      public void run() {
+         // stop current acquisition if any
+         engine_.shutdown();
+
+         // load protocol
+         if (acqControlWin_ != null) {
+            acqControlWin_.loadAcqSettingsFromFile(filePath_);
+         }
+      }
+   }
+
+   private void testForAbortRequests() throws MMScriptException {
+      if (scriptPanel_ != null) {
+         if (scriptPanel_.stopRequestPending()) {
+            throw new MMScriptException("Script interrupted by the user!");
+         }
+      }
+   }
+
+   @Override
+   public void startAcquisition() throws MMScriptException {
+      testForAbortRequests();
+      SwingUtilities.invokeLater(new ExecuteAcq());
+   }
+
+   @Override
+   public String runAcquisition() throws MMScriptException {
+      testForAbortRequests();
+      if (acqControlWin_ != null) {
+         String name = acqControlWin_.runAcquisition();
+         try {
+            while (acqControlWin_.isAcquisitionRunning()) {
+               Thread.sleep(50);
+            }
+         } catch (InterruptedException e) {
+            ReportingUtils.showError(e);
+         }
+         return name;
+      } else {
+         throw new MMScriptException(
+               "Acquisition setup window must be open for this command to work.");
+      }
+   }
+
+   @Override
+   public String runAcquisition(String name, String root)
+         throws MMScriptException {
+      testForAbortRequests();
+      if (acqControlWin_ != null) {
+         String acqName = acqControlWin_.runAcquisition(name, root);
+         try {
+            while (acqControlWin_.isAcquisitionRunning()) {
+               Thread.sleep(100);
+            }
+         } catch (InterruptedException e) {
+            ReportingUtils.showError(e);
+         }
+         return acqName;
+      } else {
+         throw new MMScriptException(
+               "Acquisition setup window must be open for this command to work.");
+      }
+   }
+
+   @Override
+   public String runAcqusition(String name, String root) throws MMScriptException {
+      return runAcquisition(name, root);
+   }
+
+   @Override
+   public void loadAcquisition(String path) throws MMScriptException {
+      testForAbortRequests();
+      SwingUtilities.invokeLater(new LoadAcq(path));
+   }
+
+   @Override
+   public void setPositionList(PositionList pl) throws MMScriptException {
+      testForAbortRequests();
+      // use serialization to clone the PositionList object
+      posList_ = pl; // PositionList.newInstance(pl);
+      SwingUtilities.invokeLater(new Runnable() {
+         @Override
+         public void run() {
+            if (posListDlg_ != null) {
+               posListDlg_.setPositionList(posList_);
+               engine_.setPositionList(posList_);
+            }
+         }
+      });
+   }
+
+   @Override
+   public PositionList getPositionList() throws MMScriptException {
+      testForAbortRequests();
+      // use serialization to clone the PositionList object
+      return posList_; //PositionList.newInstance(posList_);
+   }
+
+   @Override
+   public void sleep(long ms) throws MMScriptException {
+      if (scriptPanel_ != null) {
+         if (scriptPanel_.stopRequestPending()) {
+            throw new MMScriptException("Script interrupted by the user!");
+         }
+         scriptPanel_.sleep(ms);
+      }
+   }
+
+   @Override
+   public String getUniqueAcquisitionName(String stub) {
+      return acqMgr_.getUniqueAcquisitionName(stub);
+   }
+   
+   // TODO:
+   @Override
+   public MMAcquisition getCurrentAcquisition() {
+      return null; // if none available
+   }
+
+   public void openAcquisition(String name, String rootDir) throws MMScriptException {
+      openAcquisition(name, rootDir, true);
+   }
+
+   public void openAcquisition(String name, String rootDir, boolean show) throws MMScriptException {
+      //acqMgr_.openAcquisition(name, rootDir, show);
+      TaggedImageStorage imageFileManager = new TaggedImageStorageDiskDefault((new File(rootDir, name)).getAbsolutePath());
+      MMImageCache cache = new MMImageCache(imageFileManager);
+      VirtualAcquisitionDisplay display = new VirtualAcquisitionDisplay(cache, (AcquisitionEngine) null);
+      display.show();
+   }
+
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices, int nrPositions) throws MMScriptException {
+      this.openAcquisition(name, rootDir, nrFrames, nrChannels, nrSlices,
+              nrPositions, true, false);
+   }
+
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices) throws MMScriptException {
+      openAcquisition(name, rootDir, nrFrames, nrChannels, nrSlices, 0);
+   }
+   
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices, int nrPositions, boolean show)
+         throws MMScriptException {
+      this.openAcquisition(name, rootDir, nrFrames, nrChannels, nrSlices, nrPositions, show, false);
+   }
+
+
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices, boolean show)
+         throws MMScriptException {
+      this.openAcquisition(name, rootDir, nrFrames, nrChannels, nrSlices, 0, show, false);
+   }   
+
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices, int nrPositions, boolean show, boolean virtual)
+         throws MMScriptException {
+      acqMgr_.openAcquisition(name, rootDir, show, virtual);
+      MMAcquisition acq = acqMgr_.getAcquisition(name);
+      acq.setDimensions(nrFrames, nrChannels, nrSlices, nrPositions);
+   }
+
+   @Override
+   public void openAcquisition(String name, String rootDir, int nrFrames,
+         int nrChannels, int nrSlices, boolean show, boolean virtual)
+         throws MMScriptException {
+      this.openAcquisition(name, rootDir, nrFrames, nrChannels, nrSlices, 0, show, virtual);
+   }
+
+   public String createAcquisition(JSONObject summaryMetadata, boolean diskCached) {
+      return acqMgr_.createAcquisition(summaryMetadata, diskCached, engine_);
+   }
+
+   private void openAcquisitionSnap(String name, String rootDir, boolean show)
+         throws MMScriptException {
+      /*
+       MMAcquisition acq = acqMgr_.openAcquisitionSnap(name, rootDir, this,
+            show);
+      acq.setDimensions(0, 1, 1, 1);
+      try {
+         // acq.getAcqData().setPixelSizeUm(core_.getPixelSizeUm());
+         acq.setProperty(SummaryKeys.IMAGE_PIXEL_SIZE_UM, String.valueOf(core_.getPixelSizeUm()));
+
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
+      }
+       *
+       */
+   }
+
+   @Override
+   public void initializeSimpleAcquisition(String name, int width, int height,
+         int byteDepth, int bitDepth, int multiCamNumCh) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(name);
+      acq.setImagePhysicalDimensions(width, height, byteDepth, bitDepth, multiCamNumCh);
+      acq.initializeSimpleAcq();
+   }
+   
+   @Override
+   public void initializeAcquisition(String name, int width, int height,
+         int depth) throws MMScriptException {
+      initializeAcquisition(name,width,height,depth,8*depth);
+   }
+   
+   @Override
+   public void initializeAcquisition(String name, int width, int height,
+         int depth, int bitDepth) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(name);
+      //number of multi-cam cameras is set to 1 here for backwards compatibility
+      //might want to change this later
+      acq.setImagePhysicalDimensions(width, height, depth, bitDepth,1);
+      acq.initialize();
+   }
+
+   @Override
+   public int getAcquisitionImageWidth(String acqName) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      return acq.getWidth();
+   }
+
+   @Override
+   public int getAcquisitionImageHeight(String acqName) throws MMScriptException{
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      return acq.getHeight();
+   }
+
+   @Override
+   public int getAcquisitionImageBitDepth(String acqName) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      return acq.getBitDepth();
+   }
+   
+   @Override
+   public int getAcquisitionImageByteDepth(String acqName) throws MMScriptException{
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      return acq.getDepth();
+   }
+
+   @Override public int getAcquisitionMultiCamNumChannels(String acqName) throws MMScriptException{
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      return acq.getMultiCameraNumChannels();
+   }
+   
+   @Override
+   public Boolean acquisitionExists(String name) {
+      return acqMgr_.acquisitionExists(name);
+   }
+
+   @Override
+   public void closeAcquisition(String name) throws MMScriptException {
+      acqMgr_.closeAcquisition(name);
+   }
+
+   @Override
+   public void closeAcquisitionImage5D(String acquisitionName) throws MMScriptException {
+      acqMgr_.closeImage5D(acquisitionName);
+   }
+
+   @Override
+   public void closeAcquisitionWindow(String acquisitionName) throws MMScriptException {
+      acqMgr_.closeImage5D(acquisitionName);
    }
 
    /**
-    * Moves XY stage to its home position and calibrates.
+    * Since Burst and normal acquisition are now carried out by the same engine,
+    * loadBurstAcquistion simply calls loadAcquisition
+    * t
+    * @param path - path to file specifying acquisition settings
     */
-   // TODO: remove this method - obsolete
-//   private void homeXYStage() {
-//      String xyStage = core_.getXYStageDevice();
-//      if (xyStage.isEmpty()) {
-//         handleError("Default XYStage is not defined.\n" + "Use Configuration Wizard to define default XY Stage device.");
-//         return;
-//      }
-//
-//      int option = JOptionPane.showConfirmDialog(this, "Home and calibrate the default XY device: " + xyStage + "?\n" +
-//            "Warning: if you choose YES the stage will move to its home position.",
-//            "XY Stage homing action", JOptionPane.YES_NO_OPTION);
-//      if (option == JOptionPane.YES_OPTION) {
-//         try {
-//            core_.home(xyStage);
-//         } catch(Exception e) {
-//            handleException(e);
-//         }
-//      }
-//   }
+   @Override
+   public void loadBurstAcquisition(String path) throws MMScriptException {
+      this.loadAcquisition(path);
+   }
+
+   @Override
+   public void refreshGUI() {
+      updateGUI(true);
+   }
+
+   public void setAcquisitionProperty(String acqName, String propertyName,
+         String value) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      acq.setProperty(propertyName, value);
+   }
+
+   public void setAcquisitionSystemState(String acqName, JSONObject md) throws MMScriptException {
+      acqMgr_.getAcquisition(acqName).setSystemState(md);
+   }
+
+   public void setAcquisitionSummary(String acqName, JSONObject md) throws MMScriptException {
+      acqMgr_.getAcquisition(acqName).setSummaryProperties(md);
+   }
+
+   public void setImageProperty(String acqName, int frame, int channel,
+         int slice, String propName, String value) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(acqName);
+      acq.setProperty(frame, channel, slice, propName, value);
+   }
+
+
+   public void snapAndAddImage(String name, int frame, int channel, int slice)
+           throws MMScriptException {
+      snapAndAddImage(name, frame, channel, slice, 0);
+   }
+
+   public void snapAndAddImage(String name, int frame, int channel, int slice, int position)
+         throws MMScriptException {
+
+      Metadata md = new Metadata();
+      try {
+         Object img;
+         if (core_.isSequenceRunning()) {
+            img = core_.getLastImageMD(0, 0, md);
+         } else {
+            core_.snapImage();
+            img = core_.getImage();
+         }
+
+         MMAcquisition acq = acqMgr_.getAcquisition(name);
+
+         long width = core_.getImageWidth();
+         long height = core_.getImageHeight();
+         long depth = core_.getBytesPerPixel();
+         long bitDepth = core_.getImageBitDepth();
+         int multiCamNumCh = (int) core_.getNumberOfCameraChannels();
+
+         if (!acq.isInitialized()) {
+
+            acq.setImagePhysicalDimensions((int) width, (int) height,
+                  (int) depth, (int) bitDepth, multiCamNumCh);
+            acq.initialize();
+         }
+
+         acq.insertImage(img, frame, channel, slice, position);
+         // Insert exposure in metadata
+//       acq.setProperty(frame, channel, slice, ImagePropertyKeys.EXPOSURE_MS, NumberUtils.doubleToDisplayString(core_.getExposure()));
+         // Add pixel size calibration
+
+         /*
+          double pixSizeUm = core_.getPixelSizeUm();
+         if (pixSizeUm > 0) {
+            acq.setProperty(frame, channel, slice, ImagePropertyKeys.X_UM, NumberUtils.doubleToDisplayString(pixSizeUm));
+            acq.setProperty(frame, channel, slice, ImagePropertyKeys.Y_UM, NumberUtils.doubleToDisplayString(pixSizeUm));
+         }
+         // generate list with system state
+         JSONObject state = Annotator.generateJSONMetadata(core_.getSystemStateCache());
+         // and insert into metadata
+         acq.setSystemState(frame, channel, slice, state);
+          */
+
+
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
+      }
+
+   }
+
+   public void addToSnapSeries(Object img, String acqName) {
+      try {
+         acqMgr_.getCurrentAlbum();
+         if (acqName == null) {
+            acqName = "Snap" + snapCount_;
+         }
+         Boolean newSnap = false;
+
+         core_.setExposure(NumberUtils.displayStringToDouble(textFieldExp_.getText()));
+         long width = core_.getImageWidth();
+         long height = core_.getImageHeight();
+         long depth = core_.getBytesPerPixel();
+         //MMAcquisitionSnap acq = null;
+
+         if (! acqMgr_.hasActiveImage5D(acqName)) {
+            newSnap = true;
+         }
+
+         if (newSnap) {
+            snapCount_++;
+            acqName = "Snap" + snapCount_;
+            this.openAcquisitionSnap(acqName, null, true); // (dir=null) ->
+            // keep in
+            // memory; don't
+            // save to file.
+            initializeAcquisition(acqName, (int) width, (int) height,
+                  (int) depth);
+
+         }
+         setChannelColor(acqName, 0, Color.WHITE);
+         setChannelName(acqName, 0, "Snap");
+
+//         acq = (MMAcquisitionSnap) acqMgr_.getAcquisition(acqName);
+ //        acq.appendImage(img);
+         // add exposure to metadata
+//         acq.setProperty(acq.getFrames() - 1, acq.getChannels() - 1, acq.getSlices() - 1, ImagePropertyKeys.EXPOSURE_MS, NumberUtils.doubleToDisplayString(core_.getExposure()));
+         // Add pixel size calibration
+         double pixSizeUm = core_.getPixelSizeUm();
+         if (pixSizeUm > 0) {
+//            acq.setProperty(acq.getFrames() - 1, acq.getChannels() - 1, acq.getSlices() - 1, ImagePropertyKeys.X_UM, NumberUtils.doubleToDisplayString(pixSizeUm));
+//            acq.setProperty(acq.getFrames() - 1, acq.getChannels() - 1, acq.getSlices() - 1, ImagePropertyKeys.Y_UM, NumberUtils.doubleToDisplayString(pixSizeUm));
+         }
+         // generate list with system state
+//         JSONObject state = Annotator.generateJSONMetadata(core_.getSystemStateCache());
+         // and insert into metadata
+//         acq.setSystemState(acq.getFrames() - 1, acq.getChannels() - 1, acq.getSlices() - 1, state);
+
+
+         // closeAcquisition(acqName);
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
+      }
+
+   }
+
+   public String getCurrentAlbum() {
+      return acqMgr_.getCurrentAlbum();
+   }
+
+   public String createNewAlbum() {
+      return acqMgr_.createNewAlbum();
+   }
+
+   public void appendImage(String name, TaggedImage taggedImg) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(name);
+      int f = 1 + acq.getLastAcquiredFrame();
+      try {
+         MDUtils.setFrameIndex(taggedImg.tags, f);
+         } catch (JSONException e) {
+            throw new MMScriptException("Unable to set the frame index.");
+         }
+      acq.insertTaggedImage(taggedImg, f, 0, 0);
+   }
+
+   public void addToAlbum(TaggedImage taggedImg) throws MMScriptException {
+      addToAlbum(taggedImg, null);
+   }
+   
+   public void addToAlbum(TaggedImage taggedImg, JSONObject displaySettings) throws MMScriptException {
+      acqMgr_.addToAlbum(taggedImg,displaySettings);
+   }
+
+   public void addImage(String name, Object img, int frame, int channel,
+         int slice) throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(name);
+      acq.insertImage(img, frame, channel, slice);
+   }
+
+   public void addImage(String name, TaggedImage taggedImg) throws MMScriptException {
+      acqMgr_.getAcquisition(name).insertImage(taggedImg);
+   }
+
+   public void addImage(String name, TaggedImage taggedImg, boolean updateDisplay) throws MMScriptException {
+      acqMgr_.getAcquisition(name).insertImage(taggedImg, updateDisplay);
+   }
+   
+   public void addImage(String name, TaggedImage taggedImg, 
+           boolean updateDisplay,
+           boolean waitForDisplay) throws MMScriptException {
+   acqMgr_.getAcquisition(name).insertImage(taggedImg, updateDisplay, waitForDisplay);
+}
+   
+   public void closeAllAcquisitions() {
+      acqMgr_.closeAll();
+   }
+
+   public String[] getAcquisitionNames()
+   {
+      return acqMgr_.getAcqusitionNames();
+   }
+   
+   public MMAcquisition getAcquisition(String name) throws MMScriptException {
+      return acqMgr_.getAcquisition(name);
+   }
+
+   private class ScriptConsoleMessage implements Runnable {
+
+      String msg_;
+
+      public ScriptConsoleMessage(String text) {
+         msg_ = text;
+      }
+
+      public void run() {
+         if (scriptPanel_ != null)
+            scriptPanel_.message(msg_);
+      }
+   }
+
+   public void message(String text) throws MMScriptException {
+      if (scriptPanel_ != null) {
+         if (scriptPanel_.stopRequestPending()) {
+            throw new MMScriptException("Script interrupted by the user!");
+         }
+
+         SwingUtilities.invokeLater(new ScriptConsoleMessage(text));
+      }
+   }
+
+   public void clearMessageWindow() throws MMScriptException {
+      if (scriptPanel_ != null) {
+         if (scriptPanel_.stopRequestPending()) {
+            throw new MMScriptException("Script interrupted by the user!");
+         }
+         scriptPanel_.clearOutput();
+      }
+   }
+
+   public void clearOutput() throws MMScriptException {
+      clearMessageWindow();
+   }
+
+   public void clear() throws MMScriptException {
+      clearMessageWindow();
+   }
+
+   public void setChannelContrast(String title, int channel, int min, int max)
+         throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(title);
+      acq.setChannelContrast(channel, min, max);
+   }
+
+   public void setChannelName(String title, int channel, String name)
+         throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(title);
+      acq.setChannelName(channel, name);
+
+   }
+
+   public void setChannelColor(String title, int channel, Color color)
+         throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(title);
+      acq.setChannelColor(channel, color.getRGB());
+   }
+
+   public void setContrastBasedOnFrame(String title, int frame, int slice)
+         throws MMScriptException {
+      MMAcquisition acq = acqMgr_.getAcquisition(title);
+      acq.setContrastBasedOnFrame(frame, slice);
+   }
+
+   public void setStagePosition(double z) throws MMScriptException {
+      try {
+         core_.setPosition(core_.getFocusDevice(),z);
+         core_.waitForDevice(core_.getFocusDevice());
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+   }
+
+   public void setRelativeStagePosition(double z) throws MMScriptException {
+      try {
+         core_.setRelativePosition(core_.getFocusDevice(), z);
+         core_.waitForDevice(core_.getFocusDevice());
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+   }
+
+
+   public void setXYStagePosition(double x, double y) throws MMScriptException {
+      try {
+         core_.setXYPosition(core_.getXYStageDevice(), x, y);
+         core_.waitForDevice(core_.getXYStageDevice());
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+   }
+
+      public void setRelativeXYStagePosition(double x, double y) throws MMScriptException {
+      try {
+         core_.setRelativeXYPosition(core_.getXYStageDevice(), x, y);
+         core_.waitForDevice(core_.getXYStageDevice());
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+   }
+
+   public Point2D.Double getXYStagePosition() throws MMScriptException {
+      String stage = core_.getXYStageDevice();
+      if (stage.length() == 0) {
+         throw new MMScriptException("XY Stage device is not available");
+      }
+
+      double x[] = new double[1];
+      double y[] = new double[1];
+      try {
+         core_.getXYPosition(stage, x, y);
+         Point2D.Double pt = new Point2D.Double(x[0], y[0]);
+         return pt;
+      } catch (Exception e) {
+         throw new MMScriptException(e.getMessage());
+      }
+   }
+
+   public String getXYStageName() {
+      return core_.getXYStageDevice();
+   }
+
+   public void setXYOrigin(double x, double y) throws MMScriptException {
+      String xyStage = core_.getXYStageDevice();
+      try {
+         core_.setAdapterOriginXY(xyStage, x, y);
+      } catch (Exception e) {
+         throw new MMScriptException(e);
+      }
+   }
+
+   public AcquisitionEngine getAcquisitionEngine() {
+      return engine_;
+   }
+
+   public String installPlugin(Class<?> cl) {
+      String className = cl.getSimpleName();
+      String msg = className + " module loaded.";
+      try {
+         for (PluginItem plugin : plugins_) {
+            if (plugin.className.contentEquals(className)) {
+               return className + " already loaded.";
+            }
+         }
+
+         PluginItem pi = new PluginItem();
+         pi.className = className;
+         try {
+            // Get this static field from the class implementing MMPlugin.
+            pi.menuItem = (String) cl.getDeclaredField("menuName").get(null);
+         } catch (SecurityException e) {
+            ReportingUtils.logError(e);
+            pi.menuItem = className;
+         } catch (NoSuchFieldException e) {
+            pi.menuItem = className;
+            ReportingUtils.logError(className + " fails to implement static String menuName.");
+         } catch (IllegalArgumentException e) {
+            ReportingUtils.logError(e);
+         } catch (IllegalAccessException e) {
+            ReportingUtils.logError(e);
+         }
+
+         if (pi.menuItem == null) {
+            pi.menuItem = className;
+            //core_.logMessage(className + " fails to implement static String menuName.");
+         }
+         pi.menuItem = pi.menuItem.replace("_", " ");
+         pi.pluginClass = cl;
+         plugins_.add(pi);
+         final PluginItem pi2 = pi;
+         final Class<?> cl2 = cl;
+         SwingUtilities.invokeLater(
+            new Runnable() {
+               public void run() {
+                  addPluginToMenu(pi2, cl2);
+               }
+            });
+
+      } catch (NoClassDefFoundError e) {
+         msg = className + " class definition not found.";
+         ReportingUtils.logError(e, msg);
+
+      }
+
+      return msg;
+
+   }
+
+   public String installPlugin(String className, String menuName) {
+      String msg = "installPlugin(String className, String menuName) is deprecated. Use installPlugin(String className) instead.";
+      core_.logMessage(msg);
+      installPlugin(className);
+      return msg;
+   }
+
+   public String installPlugin(String className) {
+      String msg = "";
+      try {
+         Class clazz = Class.forName(className);
+         return installPlugin(clazz);
+      } catch (ClassNotFoundException e) {
+         msg = className + " plugin not found.";
+         ReportingUtils.logError(e, msg);
+         return msg;
+      }
+   }
+
+   public String installAutofocusPlugin(String className) {
+      try {
+         return installAutofocusPlugin(Class.forName(className));
+      } catch (ClassNotFoundException e) {
+         String msg = "Internal error: AF manager not instantiated.";
+         ReportingUtils.logError(e, msg);
+         return msg;
+      }
+   }
+
+   public String installAutofocusPlugin(Class<?> autofocus) {
+      String msg = autofocus.getSimpleName() + " module loaded.";
+      if (afMgr_ != null) {
+         try {
+            afMgr_.refresh();
+         } catch (MMException e) {
+            msg = e.getMessage();
+            ReportingUtils.logError(e);
+         }
+         afMgr_.setAFPluginClassName(autofocus.getSimpleName());
+      } else {
+         msg = "Internal error: AF manager not instantiated.";
+      }
+      return msg;
+   }
+
+   public CMMCore getCore() {
+      return core_;
+   }
+
+   public Pipeline getPipeline() {
+      try {
+         pipelineClassLoadingThread_.join();
+         if (acquirePipeline_ == null) {
+            acquirePipeline_ = (Pipeline) pipelineClass_.newInstance();
+         }
+         return acquirePipeline_;
+      } catch (Exception e) {
+         ReportingUtils.logError(e);
+         return null;
+      }
+   }
+
+   public void snapAndAddToImage5D() {
+      if (core_.getCameraDevice().length() == 0) {
+         ReportingUtils.showError("No camera configured");
+         return;
+      }
+      try {
+         getPipeline().acquireSingle();
+      } catch (Exception ex) {
+         ReportingUtils.logError(ex);
+      }
+   }
+
+   public void setAcquisitionEngine(AcquisitionEngine eng) {
+      engine_ = eng;
+   }
+   
+   public void suspendLiveMode() {
+      liveModeSuspended_ = isLiveModeOn();
+      enableLiveMode(false);
+   }
+
+   public void resumeLiveMode() {
+      if (liveModeSuspended_) {
+         enableLiveMode(true);
+      }
+   }
+
+   public Autofocus getAutofocus() {
+      return afMgr_.getDevice();
+   }
+
+   public void showAutofocusDialog() {
+      if (afMgr_.getDevice() != null) {
+         afMgr_.showOptionsDialog();
+      }
+   }
+
+   public AutofocusManager getAutofocusManager() {
+      return afMgr_;
+   }
+
+   public void selectConfigGroup(String groupName) {
+      configPad_.setGroup(groupName);
+   }
+
+   public String regenerateDeviceList()   {
+            Cursor oldc = Cursor.getDefaultCursor();
+            Cursor waitc = new Cursor(Cursor.WAIT_CURSOR);
+            setCursor(waitc);
+            StringBuffer resultFile = new StringBuffer();
+            MicroscopeModel.generateDeviceListFile(resultFile, core_);
+            //MicroscopeModel.generateDeviceListFile();
+            setCursor(oldc);
+            return resultFile.toString();
+   }
+
+
+
+
+   private void loadPlugins() {
+      afMgr_ = new AutofocusManager(this);
+
+      ArrayList<Class<?>> pluginClasses = new ArrayList<Class<?>>();
+      ArrayList<Class<?>> autofocusClasses = new ArrayList<Class<?>>();
+      List<Class<?>> classes;
+
+      try {
+         long t1 = System.currentTimeMillis();
+         classes = JavaUtils.findClasses(new File("mmplugins"), 2);
+         //System.out.println("findClasses: " + (System.currentTimeMillis() - t1));
+         //System.out.println(classes.size());
+         for (Class<?> clazz : classes) {
+            for (Class<?> iface : clazz.getInterfaces()) {
+               //core_.logMessage("interface found: " + iface.getName());
+               if (iface == MMPlugin.class) {
+                  pluginClasses.add(clazz);
+               }
+            }
+
+         }
+
+         classes = JavaUtils.findClasses(new File("mmautofocus"), 2);
+         for (Class<?> clazz : classes) {
+            for (Class<?> iface : clazz.getInterfaces()) {
+               //core_.logMessage("interface found: " + iface.getName());
+               if (iface == Autofocus.class) {
+                  autofocusClasses.add(clazz);
+               }
+            }
+         }
+
+      } catch (ClassNotFoundException e1) {
+         ReportingUtils.logError(e1);
+      }
+
+      for (Class<?> plugin : pluginClasses) {
+         try {
+            ReportingUtils.logMessage("Attempting to install plugin " + plugin.getName());
+            installPlugin(plugin);
+         } catch (Exception e) {
+            ReportingUtils.logError(e, "Failed to install the \"" + plugin.getName() + "\" plugin .");
+         }
+      }
+
+      for (Class<?> autofocus : autofocusClasses) {
+         try {
+            ReportingUtils.logMessage("Attempting to install autofocus plugin " + autofocus.getName());
+            installAutofocusPlugin(autofocus.getName());
+         } catch (Exception e) {
+            ReportingUtils.logError("Failed to install the \"" + autofocus.getName() + "\" autofocus plugin.");
+         }
+      }
+
+   }
+
+   public void logMessage(String msg) {
+      ReportingUtils.logMessage(msg);
+   }
+
+   public void showMessage(String msg) {
+      ReportingUtils.showMessage(msg);
+   }
+
+   public void logError(Exception e, String msg) {
+      ReportingUtils.logError(e, msg);
+   }
+
+   public void logError(Exception e) {
+      ReportingUtils.logError(e);
+   }
+
+   public void logError(String msg) {
+      ReportingUtils.logError(msg);
+   }
+
+   public void showError(Exception e, String msg) {
+      ReportingUtils.showError(e, msg);
+   }
+
+   public void showError(Exception e) {
+      ReportingUtils.showError(e);
+   }
+
+   public void showError(String msg) {
+      ReportingUtils.showError(msg);
+   }
+
+   private void runHardwareWizard(boolean v2) {
+      try {
+         if (configChanged_) {
+            Object[] options = {"Yes", "No"};
+            int n = JOptionPane.showOptionDialog(null,
+                  "Save Changed Configuration?", "Micro-Manager",
+                  JOptionPane.YES_NO_OPTION,
+                  JOptionPane.QUESTION_MESSAGE, null, options,
+                  options[0]);
+            if (n == JOptionPane.YES_OPTION) {
+               saveConfigPresets();
+            }
+            configChanged_ = false;
+         }
+
+         boolean liveRunning = false;
+         if (isLiveModeOn()) {
+            liveRunning = true;
+            enableLiveMode(false);
+         }
+
+         // unload all devices before starting configurator
+         core_.reset();
+         GUIUtils.preventDisplayAdapterChangeExceptions();
+
+         // run Configurator
+         if (v2) {
+        	 ConfiguratorDlg2 cfg2 = null;
+        	 try {
+        		 setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        		 cfg2 = new ConfiguratorDlg2(core_, sysConfigFile_);
+        	 } finally {
+        		 setCursor(Cursor.getDefaultCursor());        		 
+        	 }
+        	 
+            cfg2.setVisible(true);
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+
+            // re-initialize the system with the new configuration file
+            sysConfigFile_ = cfg2.getFileName();
+         } else {
+            ConfiguratorDlg configurator = new ConfiguratorDlg(core_, sysConfigFile_);
+            configurator.setVisible(true);
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+            
+            // re-initialize the system with the new configuration file
+            sysConfigFile_ = configurator.getFileName();
+         }
+         
+         mainPrefs_.put(SYSTEM_CONFIG_FILE, sysConfigFile_);
+         loadSystemConfiguration();
+         GUIUtils.preventDisplayAdapterChangeExceptions();
+
+         if (liveRunning) {
+            enableLiveMode(liveRunning);
+         }
+
+      } catch (Exception e) {
+         ReportingUtils.showError(e);
+         return;
+      }
+   }
+}
+
+class BooleanLock extends Object {
+
+   private boolean value;
+
+   public BooleanLock(boolean initialValue) {
+      value = initialValue;
+   }
+
+   public BooleanLock() {
+      this(false);
+   }
+
+   public synchronized void setValue(boolean newValue) {
+      if (newValue != value) {
+         value = newValue;
+         notifyAll();
+      }
+   }
+
+   public synchronized boolean waitToSetTrue(long msTimeout)
+         throws InterruptedException {
+
+      boolean success = waitUntilFalse(msTimeout);
+      if (success) {
+         setValue(true);
+      }
+
+      return success;
+   }
+
+   public synchronized boolean waitToSetFalse(long msTimeout)
+         throws InterruptedException {
+
+      boolean success = waitUntilTrue(msTimeout);
+      if (success) {
+         setValue(false);
+      }
+
+      return success;
+   }
+
+   public synchronized boolean isTrue() {
+      return value;
+   }
+
+   public synchronized boolean isFalse() {
+      return !value;
+   }
+
+   public synchronized boolean waitUntilTrue(long msTimeout)
+         throws InterruptedException {
+
+      return waitUntilStateIs(true, msTimeout);
+   }
+
+   public synchronized boolean waitUntilFalse(long msTimeout)
+         throws InterruptedException {
+
+      return waitUntilStateIs(false, msTimeout);
+   }
+
+   public synchronized boolean waitUntilStateIs(
+         boolean state,
+         long msTimeout) throws InterruptedException {
+
+      if (msTimeout == 0L) {
+         while (value != state) {
+            wait();
+         }
+
+         return true;
+      }
+
+      long endTime = System.currentTimeMillis() + msTimeout;
+      long msRemaining = msTimeout;
+
+      while ((value != state) && (msRemaining > 0L)) {
+         wait(msRemaining);
+         msRemaining = endTime - System.currentTimeMillis();
+      }
+
+      return (value == state);
+   }
+
+
+ 
 
 }
 

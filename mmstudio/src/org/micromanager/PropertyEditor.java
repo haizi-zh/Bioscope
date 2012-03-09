@@ -29,66 +29,89 @@ package org.micromanager;
  * PropertyEditor provides UI for manipulating sets of device properties
  */
 
-import java.awt.Color;
-import java.awt.Component;
 import java.awt.Font;
+import java.awt.Component;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.util.ArrayList;
 import java.util.prefs.Preferences;
 
-import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import javax.swing.SpringLayout;
 import javax.swing.border.BevelBorder;
-import javax.swing.table.AbstractTableModel;
-import javax.swing.table.TableCellEditor;
-import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 
+import com.swtdesigner.SwingResourceManager;
+
 import mmcorej.CMMCore;
-import mmcorej.DeviceType;
 import mmcorej.StrVector;
 
-import org.micromanager.utils.DeviceControlGUI;
+import org.micromanager.utils.MMListenerAdapter;
 import org.micromanager.utils.MMFrame;
+import org.micromanager.utils.PropertyValueCellEditor;
+import org.micromanager.utils.PropertyValueCellRenderer;
+import org.micromanager.utils.PropertyItem;
+import org.micromanager.utils.PropertyTableData;
 import org.micromanager.utils.ShowFlags;
 
-import com.swtdesigner.SwingResourceManager;
+import org.micromanager.utils.PropertyNameCellRenderer;
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * JFrame based component for generic manipulation of device properties.
  * Represents the entire system state as a list of triplets:
  * device - property - value
+ *
+ * aka the "Device/Property Browser"
  */
-public class PropertyEditor extends MMFrame {
+public class PropertyEditor extends MMFrame{
    private SpringLayout springLayout;
    private static final long serialVersionUID = 1507097881635431043L;
    
    private JTable table_;
-   private PropertyTableData data_;
-   private DeviceControlGUI parentGUI_;
-   private JCheckBox showReadonlyCheckBox_;
+   private PropertyEditorTableData data_;
    private ShowFlags flags_;
    
    private static final String PREF_SHOW_READONLY = "show_readonly";
-   private static final String PREF_GROUP = "group";
    private JCheckBox showCamerasCheckBox_;
    private JCheckBox showShuttersCheckBox_;
    private JCheckBox showStagesCheckBox_;
    private JCheckBox showStateDevicesCheckBox_;
    private JCheckBox showOtherCheckBox_;
-    
+   private JCheckBox showReadonlyCheckBox_;
+   private JScrollPane scrollPane_;
+   private MMStudioMainFrame gui_;
+   
+   public class myMMListener extends MMListenerAdapter {
+
+      @Override
+      public void propertiesChangedAlert() {
+         // avoid re-executing a refresh because of callbacks while we are updating
+         if (!data_.updating()) {
+            refresh();
+         }
+      }
+
+      @Override
+      public void propertyChangedAlert(String device, String property, String value) {
+         data_.update(device, property, value);
+      }
+   }
+
+   private myMMListener myMMListener_ = new myMMListener();
+
+   public void setGui(MMStudioMainFrame gui) {
+      gui_ = gui;
+      gui_.addMMListener(myMMListener_);
+   }
+
+
+
    public PropertyEditor() {
       super();
       Preferences root = Preferences.userNodeForPackage(this.getClass());
@@ -102,17 +125,19 @@ public class PropertyEditor extends MMFrame {
       getContentPane().setLayout(springLayout);
       setSize(551, 514);
       addWindowListener(new WindowAdapter() {
+         @Override
          public void windowClosing(WindowEvent e) {
             savePosition();
             Preferences prefs = getPrefsNode();
             prefs.putBoolean(PREF_SHOW_READONLY, showReadonlyCheckBox_.isSelected());
             flags_.save(getPrefsNode());
          }
+         @Override
          public void windowOpened(WindowEvent e) {
             // restore values from the previous session
             Preferences prefs = getPrefsNode();
             showReadonlyCheckBox_.setSelected(prefs.getBoolean(PREF_SHOW_READONLY, true));
-            data_.updateStatus();
+            data_.update();
             data_.fireTableStructureChanged();
         }
       });
@@ -121,16 +146,15 @@ public class PropertyEditor extends MMFrame {
       loadPosition(100, 100, 400, 300);
       setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-      final JScrollPane scrollPane = new JScrollPane();
-      scrollPane.setFont(new Font("Arial", Font.PLAIN, 10));
-      scrollPane.setBorder(new BevelBorder(BevelBorder.LOWERED));
-      getContentPane().add(scrollPane);
-      springLayout.putConstraint(SpringLayout.EAST, scrollPane, -5, SpringLayout.EAST, getContentPane());
-      springLayout.putConstraint(SpringLayout.WEST, scrollPane, 5, SpringLayout.WEST, getContentPane());
-
+      scrollPane_ = new JScrollPane();
+      scrollPane_.setFont(new Font("Arial", Font.PLAIN, 10));
+      scrollPane_.setBorder(new BevelBorder(BevelBorder.LOWERED));
+      getContentPane().add(scrollPane_);
+      springLayout.putConstraint(SpringLayout.EAST, scrollPane_, -5, SpringLayout.EAST, getContentPane());
+      springLayout.putConstraint(SpringLayout.WEST, scrollPane_, 5, SpringLayout.WEST, getContentPane());
+      
       table_ = new JTable();
       table_.setAutoCreateColumnsFromModel(false);
-      scrollPane.setViewportView(table_);
       
       final JButton refreshButton = new JButton();
       refreshButton.setIcon(SwingResourceManager.getIcon(PropertyEditor.class, "/org/micromanager/icons/arrow_refresh.png"));
@@ -153,7 +177,7 @@ public class PropertyEditor extends MMFrame {
          public void actionPerformed(ActionEvent e) {
             // show/hide read-only properties
             data_.setShowReadOnly(showReadonlyCheckBox_.isSelected());
-            data_.updateStatus();
+            data_.update();
             data_.fireTableStructureChanged();
           }
       });
@@ -166,7 +190,6 @@ public class PropertyEditor extends MMFrame {
       
       // restore values from the previous session
       Preferences prefs = getPrefsNode();
-      String group = prefs.get(PREF_GROUP, "");
       showReadonlyCheckBox_.setSelected(prefs.getBoolean(PREF_SHOW_READONLY, true));
 
       showCamerasCheckBox_ = new JCheckBox();
@@ -174,20 +197,21 @@ public class PropertyEditor extends MMFrame {
       showCamerasCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent arg0) {
             flags_.cameras_ = showCamerasCheckBox_.isSelected();
-            data_.updateStatus();
+            data_.update();
          }
       });
       showCamerasCheckBox_.setText("Show cameras");
       getContentPane().add(showCamerasCheckBox_);
       springLayout.putConstraint(SpringLayout.SOUTH, showCamerasCheckBox_, 28, SpringLayout.NORTH, getContentPane());
-      springLayout.putConstraint(SpringLayout.EAST, showCamerasCheckBox_, 105, SpringLayout.WEST, getContentPane());
+      springLayout.putConstraint(SpringLayout.WEST, showCamerasCheckBox_, 10, SpringLayout.WEST, getContentPane());
+      springLayout.putConstraint(SpringLayout.EAST, showCamerasCheckBox_, 111, SpringLayout.WEST, getContentPane());
 
       showShuttersCheckBox_ = new JCheckBox();
       showShuttersCheckBox_.setFont(new Font("", Font.PLAIN, 10));
       showShuttersCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent arg0) {
             flags_.shutters_ = showShuttersCheckBox_.isSelected();
-            data_.updateStatus();
+            data_.update();
          }
       });
       showShuttersCheckBox_.setText("Show shutters");
@@ -201,7 +225,7 @@ public class PropertyEditor extends MMFrame {
       showStagesCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent arg0) {
             flags_.stages_ = showStagesCheckBox_.isSelected();
-            data_.updateStatus();
+            data_.update();
          }
       });
       showStagesCheckBox_.setText("Show stages");
@@ -216,7 +240,7 @@ public class PropertyEditor extends MMFrame {
       showStateDevicesCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent arg0) {
             flags_.state_ = showStateDevicesCheckBox_.isSelected();
-            data_.updateStatus();
+            data_.update();
          }
       });
       showStateDevicesCheckBox_.setText("Show discrete changers");
@@ -231,7 +255,7 @@ public class PropertyEditor extends MMFrame {
       showOtherCheckBox_.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent arg0) {
             flags_.other_ = showOtherCheckBox_.isSelected();
-            data_.updateStatus();
+            data_.update();
          }
       });
       showOtherCheckBox_.setText("Show other devices");
@@ -239,363 +263,115 @@ public class PropertyEditor extends MMFrame {
       springLayout.putConstraint(SpringLayout.EAST, showOtherCheckBox_, 155, SpringLayout.WEST, getContentPane());
       springLayout.putConstraint(SpringLayout.WEST, showOtherCheckBox_, 10, SpringLayout.WEST, getContentPane());
       springLayout.putConstraint(SpringLayout.NORTH, showOtherCheckBox_, 95, SpringLayout.NORTH, getContentPane());
-      springLayout.putConstraint(SpringLayout.SOUTH, scrollPane, -5, SpringLayout.SOUTH, getContentPane());
-      springLayout.putConstraint(SpringLayout.NORTH, scrollPane, 5, SpringLayout.SOUTH, showOtherCheckBox_);
+      springLayout.putConstraint(SpringLayout.SOUTH, scrollPane_, -5, SpringLayout.SOUTH, getContentPane());
+      springLayout.putConstraint(SpringLayout.NORTH, scrollPane_, 5, SpringLayout.SOUTH, showOtherCheckBox_);
    }
    
+
+
    protected void refresh() {
+      data_.gui_ = gui_;
+      data_.flags_ = flags_;
+      data_.showUnused_ = true;
       data_.refresh();
    }
 
-   public void setCore(CMMCore core){
-      data_ = new PropertyTableData(core, flags_);
-      table_.removeAll();
-      table_.setModel(data_);
-      
-      PropertyCellEditor cellEditor = new PropertyCellEditor();
-      PropertyCellRenderer renderer = new PropertyCellRenderer();
-     
-      for (int k=0; k < data_.getColumnCount(); k++) {
-         TableColumn column = new TableColumn(k, 200, renderer, cellEditor);
-         table_.addColumn(column);
-      }
-      
-      showCamerasCheckBox_.setSelected(flags_.cameras_);
-      showStagesCheckBox_.setSelected(flags_.stages_);
-      showShuttersCheckBox_.setSelected(flags_.shutters_);
-      showStateDevicesCheckBox_.setSelected(flags_.state_);
-      showOtherCheckBox_.setSelected(flags_.other_);
-      
-      data_.setShowReadOnly(showReadonlyCheckBox_.isSelected());
-  }
-   
-   public void setParentGUI(DeviceControlGUI parent) {
-      parentGUI_ = parent;
+   public void updateStatus() {
+      if (data_ != null)
+         data_.update();
    }
-   
-   private void handleException (Exception e) {
-      String errText = "Exeption occured: " + e.getMessage();
-      JOptionPane.showMessageDialog(this, errText);
-   }
-      
-   
-   /**
-    * Property descriptor, representing MMCore data
-    */
-   private class PropertyItem {
-      public String device;  // device name (label)
-      public String name;    // property name
-      public String value;   // property value
-      public boolean readOnly = false;    // is it read-only ?
-      public String allowed[];            // the list of allowed values
-      public boolean show = true; // is it included in the current configuration ?
-   }
-   
 
-   /**
-    * Property table data model, representing MMCore data
-    */
-   class PropertyTableData extends AbstractTableModel {
-      final public String columnNames_[] = {
-            "Property",
-            "Value",
-      };
-      
-      ArrayList propList_ = new ArrayList();
-      private CMMCore core_ = null;
-      private boolean showReadOnly_ = true;
-      
-      public PropertyTableData(CMMCore core, ShowFlags flags) {
-         core_ = core;
-         flags_ = flags;
-         updateStatus();
+    public void setCore(CMMCore core) {
+        data_ = new PropertyEditorTableData(core, "", "", 1, 2, getContentPane());
+        data_.gui_ = gui_;
+        data_.flags_ = flags_;
+        data_.showUnused_ = true;
+        data_.setColumnNames("Property", "Value", "");
+
+        table_ = new JTable();
+        table_.setAutoCreateColumnsFromModel(false);
+        table_.setModel(data_);
+        scrollPane_.setViewportView(table_);
+
+        table_.addColumn(new TableColumn(0, 200, new PropertyNameCellRenderer(), null));
+        table_.addColumn(new TableColumn(1, 200, new PropertyValueCellRenderer(false), new PropertyValueCellEditor(false)));
+
+        showCamerasCheckBox_.setSelected(flags_.cameras_);
+        showStagesCheckBox_.setSelected(flags_.stages_);
+        showShuttersCheckBox_.setSelected(flags_.shutters_);
+        showStateDevicesCheckBox_.setSelected(flags_.state_);
+        showOtherCheckBox_.setSelected(flags_.other_);
+
+        data_.setShowReadOnly(showReadonlyCheckBox_.isSelected());
+    }
+   
+    public class PropertyEditorTableData extends PropertyTableData {
+      public PropertyEditorTableData(CMMCore core, String groupName, String presetName,
+         int PropertyValueColumn, int PropertyUsedColumn, Component parentComponent) {
+
+         super(core, groupName, presetName, PropertyValueColumn, PropertyUsedColumn, false);
       }
-      public void deleteConfig(String group, String config) {
-         try {
-            core_.deleteConfig(group, config);
-         } catch (Exception e) {
-            handleException(e);
-         }
-      }
-      public StrVector getAvailableConfigGroups() {
-         return core_.getAvailableConfigGroups();
-      }
-      public void setConfig(String group, String config) {
-         try {
-            core_.setConfig(group, config);
-            core_.waitForConfig(group, config);
-         } catch (Exception e) {
-            handleException(e);
-         }                  
-      }
-                 
-      public int getRowCount() {
-         return propList_.size();
-      }
-      
-      public int getColumnCount() {
-         return columnNames_.length;
-      }
-      
-      public PropertyItem getPropertyItem(int row) {
-         return (PropertyItem) propList_.get(row);
-      }
-      
-      public Object getValueAt(int row, int col) {
-         
-         PropertyItem item = (PropertyItem) propList_.get(row);
-         if (col == 0)
-            return item.device + "-" + item.name;
-         else if (col == 1)
-            return item.value;
-         
-         return null;
-      }
-      
+   
+      private static final long serialVersionUID = 1L;
+
+      @Override
       public void setValueAt(Object value, int row, int col) {
-         PropertyItem item = (PropertyItem) propList_.get(row);
-         if (col == 1) {
-            try {
-               core_.setProperty(item.device, item.name, value.toString());
-               //item.m_value = core_.getProperty(item.m_device, item.m_name);
-               core_.waitForDevice(item.device);
-               refresh();
-               //item.m_value = value.toString();
-               if (parentGUI_ != null)
-                  parentGUI_.updateGUI();              
-               fireTableCellUpdated(row, col);
-            } catch (Exception e) {
-               handleException(e);
-            }
+         PropertyItem item = propListVisible_.get(row);
+         ReportingUtils.logMessage("Setting value " + value + " at row " + row);
+         if (col == PropertyValueColumn_) {
+            setValueInCore(item,value);
          }
-      }
-      
-      public String getColumnName(int column) {
-         return columnNames_[column];
-      }
-      
-      public boolean isCellEditable(int nRow, int nCol) {
-         if(nCol == 1)
-            return !((PropertyItem)propList_.get(nRow)).readOnly;
-         else
-            return false;
-      }
-      
-      String getConfig(String group) {
-         return core_.getCurrentConfig(group);
-      }
-      
-      StrVector getAvailableConfigs(String group) {
-          return core_.getAvailableConfigs(group);
-      }
-      
-      public void refresh(){
-         try {            
-            for (int i=0; i<propList_.size(); i++){
-               PropertyItem item = (PropertyItem) propList_.get(i);
-               item.value = core_.getProperty(item.device, item.name);
-            }
-            this.fireTableDataChanged();
-         } catch (Exception e) {
-            handleException(e);
-         }
+         refresh();
+         gui_.refreshGUI();
+         fireTableCellUpdated(row, col);
       }
 
-      public void updateStatus(){
+      public void update (String device, String propName, String newValue) {
+         PropertyItem item = getItem(device, propName);
+         if (item != null) {
+            item.value = newValue;
+            // Better to call fireTableCellUpdated(row, col)???
+            fireTableDataChanged();
+         }
+      }
+      
+      @Override
+      public void update(ShowFlags flags, String groupName, String presetName) {  
          try {
             StrVector devices = core_.getLoadedDevices();
             propList_.clear();
-            
-            for (int i=0; i<devices.size(); i++){
-               
-               // select which devices to display
-               DeviceType dtype = core_.getDeviceType(devices.get(i));
-               boolean showDevice = false;
-               if (dtype == DeviceType.CameraDevice)
-                  showDevice = flags_.cameras_;
-               else if (dtype == DeviceType.ShutterDevice)
-                  showDevice = flags_.shutters_;
-               else if (dtype == DeviceType.StageDevice)
-                  showDevice = flags_.stages_;
-               else if (dtype == DeviceType.StateDevice)
-                  showDevice = flags_.state_;
-               else
-                  showDevice = flags_.other_;
-               
-               if (showDevice) {
+
+
+            gui_.suspendLiveMode();
+            for (int i=0; i<devices.size(); i++) { 
+               if (data_.showDevice(flags, devices.get(i))) {
                   StrVector properties = core_.getDevicePropertyNames(devices.get(i));
-                  
                   for (int j=0; j<properties.size(); j++){
                      PropertyItem item = new PropertyItem();
-                     item.device = devices.get(i);
-                     item.name = properties.get(j);
-                     item.value = core_.getProperty(devices.get(i), properties.get(j));
-                     item.readOnly = core_.isPropertyReadOnly(devices.get(i), properties.get(j));
-                     StrVector values = core_.getAllowedPropertyValues(devices.get(i), properties.get(j));
-                     item.allowed = new String[(int)values.size()];
-                     for (int k=0; k<values.size(); k++){
-                        item.allowed[k] = values.get(k);
-                     }
-                     
-                     if ((showReadOnly_ && item.readOnly) || !item.readOnly)
+                     item.readFromCore(core_, devices.get(i), properties.get(j));
+
+                     if ((!item.readOnly || showReadOnly_) && !item.preInit) {
                         propList_.add(item);
+                     }
                   }
                }
             }
+
+            updateRowVisibility(flags); 
+
+            gui_.resumeLiveMode();
          } catch (Exception e) {
             handleException(e);
          }
          this.fireTableStructureChanged();
-      }
-      
-      public boolean isShowReadOnly() {
-         return showReadOnly_;
-      }
-      public void setShowReadOnly(boolean showReadOnly) {
-         this.showReadOnly_ = showReadOnly;
-      }      
-   }
-   
-   /**
-    * Cell editing using either JTextField or JComboBox depending on whether the
-    * property enforces a set of allowed values.
-    */
-   public class PropertyCellEditor extends AbstractCellEditor implements TableCellEditor {
-      // This is the component that will handle the editing of the cell value
-      JTextField text_ = new JTextField();
-      JComboBox combo_ = new JComboBox();
-      JCheckBox check_ = new JCheckBox();
-      int editingCol_;
-      PropertyItem item_;
-      
-      public PropertyCellEditor() {
-         super();
-         check_.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-               fireEditingStopped();
-            }
-         });
-      }
-      
-      // This method is called when a cell value is edited by the user.
-      public Component getTableCellEditorComponent(JTable table, Object value,
-            boolean isSelected, int rowIndex, int colIndex) {
-         
-         if (isSelected) {
-            // cell (and perhaps other cells) are selected
-         }
-         
-         editingCol_ = colIndex;
-                  
-         PropertyTableData data = (PropertyTableData)table.getModel();
-         item_ = data.getPropertyItem(rowIndex);
-         // Configure the component with the specified value
-         
-         if (colIndex == 1) {
-            if (item_.allowed.length == 0) {
-               text_.setText((String)value);
-               return text_;
-            }
-         
-            ActionListener[] l = combo_.getActionListeners();
-            for (int i=0; i<l.length; i++)
-               combo_.removeActionListener(l[i]);
-            combo_.removeAllItems();
-            for (int i=0; i<item_.allowed.length; i++){
-               combo_.addItem(item_.allowed[i]);
-            }
-            combo_.setSelectedItem(item_.value);
-            
-            // end editing on selection change
-            combo_.addActionListener(new ActionListener() {
-               public void actionPerformed(ActionEvent e) {
-                  fireEditingStopped();
-               }
-            });
-                       
-            return combo_;
-         } else if (colIndex == 2) {
-            return check_;
-         }
-         return null;
-      }
-      
-      // This method is called when editing is completed.
-      // It must return the new value to be stored in the cell.
-      public Object getCellEditorValue() {
-         if (editingCol_ == 1) {
-            if (item_.allowed.length == 0)
-               return text_.getText();
-            else
-               return combo_.getSelectedItem();
-         } else if (editingCol_ == 2)
-            return check_;
-         
-         return null;
-      }
-   }
-   
-   /**
-    * Cell rendering for the device property table
-    */
-   public class PropertyCellRenderer implements TableCellRenderer {
-      // This method is called each time a cell in a column
-      // using this renderer needs to be rendered.
-      PropertyItem m_item;
-      
-      public Component getTableCellRendererComponent(JTable table, Object value,
-            boolean isSelected, boolean hasFocus, int rowIndex, int colIndex) {
-         
-         PropertyTableData data = (PropertyTableData)table.getModel();
-         m_item = data.getPropertyItem(rowIndex);
-         
-         if (isSelected) {
-            // cell (and perhaps other cells) are selected
-         }
-         
-         if (hasFocus) {
-            // this cell is the anchor and the table has the focus
-         }
-         
-         Component comp;
-         
-         if (colIndex == 0) {
-            JLabel lab = new JLabel();
-            lab.setText((String)value);
-            lab.setOpaque(true);
-            lab.setHorizontalAlignment(JLabel.LEFT);
-            comp = lab;
-         } else if (colIndex == 1) {
-            JLabel lab = new JLabel();
-            lab.setOpaque(true);
-            lab.setText(m_item.value.toString());
-            lab.setHorizontalAlignment(JLabel.LEFT);
-            comp = lab;
 
-         } else {
-            comp = new JLabel("Undefinded");
-         }
-         
-         Font font = getFont();
-         if (m_item.readOnly) {
-            //comp.setFont(new java.awt.Font( font.getName(), Font.PLAIN, font.getSize()));
-            comp.setBackground(Color.LIGHT_GRAY);
-         } else {
-            //comp.setFont(new java.awt.Font( font.getName(), Font.BOLD, font.getSize()));
-            comp.setBackground(Color.white);
-         }         
-          return comp;
-      }
-      
-      // The following methods override the defaults for performance reasons
-      public void validate() {}
-      public void revalidate() {}
-      protected void firePropertyChange(String propertyName, Object oldValue, Object newValue) {}
-      public void firePropertyChange(String propertyName, boolean oldValue, boolean newValue) {}
-      public PropertyCellRenderer() {
-         super();
-         //setFont(new Font("Arial", Font.PLAIN, 10));
       }
    }
+
+ 
+   private void handleException (Exception e) {
+      ReportingUtils.showError(e);
+   }
+   
 }
 

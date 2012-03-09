@@ -26,6 +26,28 @@
 #include "../MMDevice/MMDeviceConstants.h"
 #include <vector>
 #include <string>
+#ifdef _WINDOWS
+#include <time.h>
+#include <windows.h>
+#endif
+
+#if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
+  #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
+#else
+  #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
+#endif
+ 
+#ifdef _WINDOWS
+struct timezone 
+{
+  int  tz_minuteswest; /* minutes W of Greenwich */
+  int  tz_dsttime;     /* type of dst correction */
+};
+ 
+int gettimeofday(struct timeval *tv__, struct timezone *tz__);
+
+#endif
+
 
 class CDeviceUtils
 {
@@ -34,7 +56,13 @@ public:
    static unsigned GetMaxStringLength();
    static const char* ConvertToString(long lnVal);
    static const char* ConvertToString(double dVal);
+   static const char* ConvertToString(int val);
+   static const char* ConvertToString(bool val);
    static void Tokenize(const std::string& str, std::vector<std::string>& tokens, const std::string& delimiters = ",");
+   static void SleepMs(long ms);
+   static void NapMicros(unsigned long microsecs);
+   static std::string HexRep(std::vector<unsigned char>  );
+   static bool CheckEnvironment(std::string environment);
 private:
    static char m_pszBuffer[MM::MaxStrLength];
 };

@@ -3,122 +3,405 @@
 
 AC_PREREQ(2.57)
 AC_INIT(FULL-PACKAGE-NAME, VERSION, BUG-REPORT-ADDRESS)
+AC_CONFIG_MACRO_DIR([../m4])
 AC_CONFIG_SRCDIR([DemoCamera/DemoCamera.cpp])
-#AC_CONFIG_HEADER([config.h])
 AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE
-
-
-# Checks for programs.
-AC_PROG_CXX
-AC_PROG_CC
+AC_DISABLE_STATIC
 AC_PROG_LIBTOOL
 
-# Checks for libraries.
+m4_include([../configure.common])
 
-# Checks for header files.
-# Only build Hamamatsu driver when header files are present
-AM_CONDITIONAL([BUILD_HAMAMATSU],[test -f "/Library/Frameworks/dcamapi.framework/Headers/dcamapi.h"])
-# Same for PVCAM
-AM_CONDITIONAL([BUILD_PVCAM],[test -f "/Library/Frameworks/PVCAM.framework/Headers/pvcam.h"])
-# and for Firewire cameras (libdc1394) 
-# TODO: Need better test here
-AM_CONDITIONAL([BUILD_DC1394],[test -f "/usr/local/include/iidc1394/control.h"])
-# Only build the Nikon TE2000 when the code is there
-AM_CONDITIONAL([BUILD_TE2000],[test -f "NikonTE2000/NikonTE2000.h"])
-if test -f $(srcdir)"NikonTE2000/NikonTE2000.h"; then
-   TE2000=NikonTE2000
+# TODO: Following should decide whether adapters depending on BOOST get build
+AX_BOOST_BASE([1.40.0])
+AX_BOOST_THREAD
+AX_BOOST_ASIO
+AX_BOOST_SYSTEM
+
+# Find Micro-Manager headers
+micromanager_path=${ac_pwd}/..
+MMDEVAPI_CXXFLAGS="-I${micromanager_path}"
+AC_SUBST(MMDEVAPI_CXXFLAGS)
+
+# Find Micro-Manager static device library
+## Note: adding the libtool library gives problems on OS X 10.4, adding the static lib works
+MMDEVAPI_LIBADD="${micromanager_path}/MMDevice/.libs/libMMDevice.a"
+AC_SUBST(MMDEVAPI_LIBADD)
+
+# Apply appropriate libtool options for the Micro-Manager device API
+MMDEVAPI_LDFLAGS="-module -shared -shrext \"\$(MMSUFFIX)\" -avoid-version"
+AC_SUBST(MMDEVAPI_LDFLAGS)
+
+# Location of third party public files
+thirdpartypublic="${micromanager_path}/../3rdpartypublic"
+
+# Checkfor libUSB 
+AC_MSG_CHECKING(for libusb)
+AC_FIND_FILE([usb.h], [/usr/include /usr/local/$ARCH/include], USBINCDIR)
+if test x$USBINCDIR = xNO; then
+   AC_MSG_RESULT([not found])
 else
-   TE2000=
+   AC_CHECK_HEADERS([$USBINCDIR/usb.h])
+   if test -z "$LIBUSB" ; then
+      case $host in
+         *-*-linux*)
+            LIBUSB="-lusb"
+            ;;
+         *)
+            AC_FIND_FILE([libusb.a], [/usr/lib /usr/lib64 /usr/local/$ARCH/lib], USBLIBDIR)
+            if test x$USBLIBDIR = xNO; then
+               AC_MSG_RESULT(["libusb not found"])
+            else
+               AC_MSG_RESULT(["libusb.a" found])
+               LIBUSB="$USBLIBDIR/libusb.a"
+            fi
+         ;;
+      esac
+   fi
 fi
-AC_SUBST(TE2000)
+AC_SUBST(LIBUSB)
+AM_CONDITIONAL([BUILD_USBMANAGER], [test -n "$LIBUSB"])
+
+# Only build PVCAM if header files present.
+AC_MSG_CHECKING(for Pvcam)
+AC_FIND_FILE([pvcam.h], [/usr/include/pvcam /Library/Frameworks/PVCAM.framework/Headers], PVCAMINCDIR)
+if test x$PVCAMINCDIR = xNO; then
+   AC_MSG_RESULT([not found])
+fi
+AM_CONDITIONAL([BUILD_PVCAM], [test -f "$PVCAMINCDIR/pvcam.h"])
+if test -f "$PVCAMINCDIR/pvcam.h" ; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# Same for QCam
+AC_MSG_CHECKING(for QCam)
+AM_CONDITIONAL([BUILD_QCAM],[test -f "/Library/Frameworks/QCam.framework/Headers/QCamApi.h"])
+if test -f "/Library/Frameworks/QCam.framework/Headers/QCamApi.h" ; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# Same for Scion
+AC_MSG_CHECKING(for Scion)
+AM_CONDITIONAL([BUILD_SCION],[test -f "/Library/Frameworks/sfwlib.framework/Headers/sfwlib.h"])
+if test -f "/Library/Frameworks/sfwlib.framework/Headers/sfwlib.h"; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# Same for Diagnostic Spot
+AC_MSG_CHECKING(for Diagnostic Spot)
+AM_CONDITIONAL([BUILD_SPOT],[test -f "/Library/Frameworks/SpotCam.framework/Headers/SpotCam.h"])
+if test -f "/Library/Frameworks/SpotCam.framework/Headers/SpotCam.h"; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# and for Firewire cameras (libdc1394) 
+AC_MSG_CHECKING(for libdc1394)
+AC_FIND_FILE([dc1394], [/usr/include /usr/local/$ARCH/include], DC1394INCDIR)
+if test x$DC1394INCDIR = xNO; then
+   AC_MSG_RESULT([not found])
+else
+   AC_CHECK_HEADERS([$DC1394INCDIR/dc1394/dc1394.h])
+   if test -z "$LIBDC1394" ; then
+      case $host in
+         *-*-linux*)
+            LIBDC1394="-ldc1394"
+            ;;
+         *)
+            AC_FIND_FILE([libdc1394.a], [/usr/lib /usr/lib64 /usr/local/$ARCH/lib], DC1394LIBDIR)
+            if test x$DC1394LIBDIR = xNO; then
+               AC_MSG_RESULT(["libdc1394 not found"])
+            else
+               AC_MSG_RESULT(["libdc1394.a" found])
+               LIBDC1394="$DC1394LIBDIR/libdc1394.a"
+            fi
+         ;;
+      esac
+   fi
+fi
+AC_SUBST(LIBDC1394)
+AM_CONDITIONAL([BUILD_DC1394], [test -n "$LIBDC1394"])
+
+# Andor cameras on linux 
+AC_MSG_CHECKING(for Andor cameras)
+AM_CONDITIONAL([BUILD_ANDOR],[test -f "/usr/local/include/atmcdLXd.h"])
+if test -f "/usr/local/include/atmcdLXd.h" ; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# Andor laser combiner on linux 
+AC_MSG_CHECKING(for Andor laser combiner)
+AM_CONDITIONAL([BUILD_ANDORLASERCOMBINER],[test -f "/usr/local/include/ALC_REV.h"])
+if test -f "/usr/local/include/ALC_REV.h" ; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# Sensicam on linux 
+AC_MSG_CHECKING(for Sensicam)
+AM_CONDITIONAL([BUILD_SENSICAM],[test -f "/usr/local/include/sensicam.h"])
+if test -f "/usr/local/include/sensicam.h"; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# SimpleCam - GPhoto
+PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES([GPHOTO2], [libgphoto2 >= 2.1.10], [have_libgphoto2=yes], [have_libgphoto2=no])
+
+if test x$have_libgphoto2 = xno; then
+   buildsc=false
+   AC_MSG_RESULT([not found])
+else
+   AC_MSG_RESULT([found])
+   GPHOTO2_VERSION=`$PKG_CONFIG --modversion libgphoto2`
+   GPHOTO2_PORT_VERSION=`$PKG_CONFIG --modversion libgphoto2_port`
+   GPHOTO2_LIBDIR=`$PKG_CONFIG --variable=libdir libgphoto2`
+   LIBGPHOTO2LIBDIR=`$PKG_CONFIG --variable=libdir libgphoto2`
+   buildsc=false
+   if test -f "$LIBGPHOTO2LIBDIR/libgphoto2.la"; then
+      LIBGPHOTO2="$LIBGPHOTO2LIBDIR/libgphoto2.la -lltdl"
+      buildsc=true
+   else
+      if test -f "$LIBGPHOTO2LIBDIR/libgphoto2.so"; then
+         LIBGPHOTO2="-lgphoto2"
+         buildsc=true
+      fi
+   fi
+fi
+
+# On mac, install dynamic gphoto2 libraries 
+case $host in
+   *apple-darwin*)
+      AC_SUBST([INSTALL_LIBGPHOTO], [install_macos])
+      ;;
+   *)
+      AC_SUBST([INSTALL_LIBGPHOTO], [install_linux])
+      ;;
+esac
+AC_SUBST(GPHOTO2_CFLAGS)
+AC_SUBST(GPHOTO2_LIBS)
+AC_SUBST(GPHOTO2_LIBDIR)
+AC_SUBST(GPHOTO2_VERSION)
+AC_SUBST(GPHOTO2_PORT_VERSION)
+AC_SUBST(LIBGPHOTO2)
+
+# LibFreeImage
+AC_MSG_CHECKING(for libFreeImage headers)
+AC_FIND_FILE([FreeImage.h], [/usr/local/include /usr/include ${thirdpartypublic}/FreeImage/Dist], FREEIMAGEINCDIR)
+AM_CONDITIONAL([LIBFREEIMAGEFOUND], [test -f "$FREEIMAGEINCDIR/FreeImage.h"])
+if test -f "$FREEIMAGEINCDIR/FreeImage.h"; then
+   AC_MSG_RESULT([found])
+   
+   AC_FIND_FILE([libfreeimage.a], [/usr/lib /usr/lib64 /usr/local/$ARCH/lib], FREEIMAGELIBDIR)
+   if test x$FREEIMAGELIBDIR = xNO; then
+      buildsc=false
+      AC_MSG_RESULT(["libfreeimage.a" not found...])
+   else
+      AC_MSG_RESULT(["libfreeimage.a" found])
+      AC_SUBST(LIBFREEIMAGE, "$FREEIMAGELIBDIR/libfreeimage.a")
+      AC_SUBST(LIBFREEIMAGE_CXXFLAGS, "-I$FREEIMAGEINCDIR")
+   fi
+   
+   AC_MSG_CHECKING(for libFreeImagePlus headers)
+   AC_FIND_FILE([FreeImagePlus.h], [/usr/local/include /usr/include ${thirdpartypublic}/FreeImage/Wrapper/FreeImagePlus], FREEIMAGEPLUSINCDIR)
+   if test -f "$FREEIMAGEPLUSINCDIR/FreeImagePlus.h"; then
+      AC_MSG_RESULT([found])
+
+      AC_SUBST(LIBFREEIMAGEPLUS_CXXFLAGS, "-I$FREEIMAGEPLUSINCDIR")
+      AC_FIND_FILE([libfreeimageplus.a], [/usr/lib /usr/lib64 /usr/local/$ARCH/lib], FREEIMAGEPLUSLIBDIR)
+      if test x$FREEIMAGEPLUSLIBDIR = xNO; then
+         AC_MSG_RESULT(["libfreeimageplus.a" not found (can be ok)])
+      else
+         AC_MSG_RESULT(["libfreeimageplus.a" found])
+         AC_SUBST(LIBFREEIMAGEPLUS, "$FREEIMAGEPLUSLIBDIR/libfreeimageplus.a")
+      fi
+   fi
+else
+   buildsc=false
+   AC_MSG_RESULT([not found: To build the GPhoto device adapter download and install FreeImage in ../../3rdpartypublic/FreeImage])
+fi
+AM_CONDITIONAL([BUILD_SIMPLECAM], [test x$buildsc = xtrue])
+
+# Video4linux
+AC_MSG_CHECKING(for Video4linux2)
+AM_CONDITIONAL([BUILD_V4L2],[test -f "/usr/include/libv4l2.h"])
+if test -f "/usr/include/libv4l2.h"; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# ITC on linux 
+AC_MSG_CHECKING(for ITC)
+AM_CONDITIONAL([BUILD_ITC],[test -f "/usr/local/include/ITC18.h"])
+if test -f "/usr/local/include/ITC18.h" ; then
+   AC_MSG_RESULT([found])
+else
+   AC_MSG_RESULT([not found])
+fi
+
+# OpenCV
+AX_OPENCV
+AM_CONDITIONAL(BUILD_OPENCV,test x$hasopencv = xtrue)
+
+# Only build ... when the code is there
+AM_CONDITIONAL([BUILD_TEST],[test -f "Test/Test.h"])
+if test -f "Test/Test.h"; then
+   TEST=Test
+   TESTMAKEFILE="Test/Makefile"
+else
+   TEST=
+   TESTMAKEFILE=
+fi
+AC_SUBST(TEST)
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
 AC_C_CONST
 AC_C_INLINE
 
-#----------------------------------------------------------------
-# LINKFORSHARED are the flags passed to the $(CC) command that links
-# -- this is only needed for a few systems
-#----------------------------------------------------------------
-AC_MSG_CHECKING(LINKFORSHARED)
-if test -z "$LINKFORSHARED"
-then    
-case $host in   
-   *-*-aix*)   LINKFORSHARED='-Wl,-bE:$(srcdir)/python.exp -lld';;
-   *-*-hp*) LINKFORSHARED="-Wl,-E -Wl,+s -Wl,+b\$(BINLIBDEST)/lib-dynload";;
-   *-*-linux*) LINKFORSHARED="-Xlinker -export-dynamic";;
-   *-*-next*) LINKFORSHARED="-u libsys_s";;
-   *-sco-sysv*) LINKFORSHARED="-Bdynamic -dy -Wl,-Bexport";;                  
-   *-*-irix6*) LINKFORSHARED="-all";;   esac
-fi
-AC_MSG_RESULT($LINKFORSHARED)
-AC_SUBST(LINKFORSHARED)
 
 # On the Mac we need some frameworks that can be in the way on Linux
 case $host in 
    *apple-darwin*)
-      AC_MSG_CHECKING(dcam linker flags)
-      DCAMFRAMEWORKS="-framework dcamapi"
-      AC_MSG_RESULT($DCAMFRAMEWORKS)
       AC_MSG_CHECKING(pvcam linker flags)
       PVCAMFRAMEWORKS="-framework PVCAM"
       AC_MSG_RESULT($PVCAMFRAMEWORKS)
+      AC_MSG_CHECKING(diagnostic spot linker flags)
+      SPOTFRAMEWORKS="-framework SpotCam"
+      AC_MSG_RESULT($SPOTFRAMEWORKS)
       AC_MSG_CHECKING(Serial adapter linker flags)
       SERIALFRAMEWORKS="-framework CoreFoundation -framework IOKit"
       AC_MSG_RESULT($SERIALFRAMEWORKS)
+      AC_MSG_CHECKING(QuickTime linker flags)
+      QUICKTIMEFRAMEWORKS="-framework QuickTime -framework QTKit"
+      AC_MSG_RESULT($QUICKTIMEFRAMEWORKS)
+      AC_MSG_CHECKING(OpenCV linker flags)
+      OPENCV_XLDFLAGS="-lopencv_imgproc"
+      AC_MSG_RESULT($OPENCV_XLDFLAGS)
+      ;;
+   *linux*)
+      AC_MSG_CHECKING(pvcam linker flags)
+      PVCAMFRAMEWORKS="-lpvcam"
+      ;;
 esac
-AC_SUBST(DCAMFRAMEWORKS)
 AC_SUBST(PVCAMFRAMEWORKS)
+AC_SUBST(SPOTFRAMEWORKS)
 AC_SUBST(SERIALFRAMEWORKS)
+AC_SUBST(QUICKTIMEFRAMEWORKS)
+AC_SUBST(OPENCV_XLDFLAGS)
 
-# Micro-Manager libraries have a prefix to make them unique.  This prefix is defined here:
+# Micro-Manager libraries have a prefix & suffix to make them unique.  These are defined here:
+case $host in
+   *-*-linux*)
+   MMSUFFIX=".so.0"
+   MMPREFIX="libmmgr_dal_"
+   ;;
+esac
+if test -z "$MMSUFFIX"; then
+  MMSUFFIX=""
+fi
+if test -z "$MMPREFIX"; then
+  MMPREFIX="mmgr_dal_"
+fi
+
+AC_MSG_CHECKING(library suffix)
+AC_MSG_RESULT($MMSUFFIX)
+AC_SUBST(MMSUFFIX)
 AC_MSG_CHECKING(library prefix)
-MMPREFIX="mmgr_dal_"
 AC_MSG_RESULT($MMPREFIX)
 AC_SUBST(MMPREFIX)
 
-# Determine if we need to look for ImageJ
-AC_MSG_CHECKING(whether to build for imagej)
-AC_ARG_WITH(imagej, [  --without-imagej        Build without the ImageJ-based GUI], [IMAGEJ="$withval"], [IMAGEJ="yes"])
-AC_MSG_RESULT($IMAGEJ)
-
-if test "$IMAGEJ" = "yes" ; then
-   #----------------------------------------------------------------
-   # Find ImageJ directory
-   #----------------------------------------------------------------
-   AC_MSG_CHECKING(for ImageJ directory)
-   AC_ARG_WITH(ImageJdir, [  --with-imagej=path      Set location of ImageJ directory], [IMAGEJDIR="$withval"], [IMAGEJDIR=])
-
-   if test -z "$IMAGEJDIR"; then  
-      IMAGEJDIR="/Applications/ImageJ_dev /Applications/ImageJ /usr/local/ImageJ /usr/local/imagej "
-   fi  
-
-   IJPATH=""                                                                   
-   for d in $IMAGEJDIR ; do                                                    
-     if test -d "$d" ; then 
-       AC_MSG_RESULT($d)
-       IJPATH=$d
-       break
-     fi
-   done
-
-   if test "$IJPATH" = "" ; then
-     AC_MSG_ERROR([not found, Use the without-imagej directive to build without ImageJ or install ImageJ (http://rsb.info.nih.gov/ij/ and rerun configure, possibly using the --with-imagej=path directive])
-   fi
-fi
-
-AC_SUBST(IJPATH)
 
 # Checks for library functions.
 AC_HEADER_STDC
 AC_CHECK_FUNCS([memset])
 
-
-# AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES(Makefile AOTF/Makefile Andor/Makefile DTOpenLayer/Makefile DemoCamera/Makefile SerialManagerUNIX/Makefile Ludl/Makefile ZeissCAN/Makefile Vincent/Makefile Conix/Makefile Hamamatsu/Makefile PVCAM/Makefile Nikon/Makefile NikonTE2000/Makefile ParallelPort/Makefile Sensicam/Makefile SerialManager/Makefile StanfordPhotonics/Makefile SutterLambda/Makefile Prior/Makefile dc1394/Makefile Yokogawa/Makefile)
+AC_CONFIG_FILES(
+	[Makefile]
+	[AAAOTF/Makefile:AAAOTF/Makefile.in:MMDEVAPI.rules]
+	[AOTF/Makefile:AOTF/Makefile.in:MMDEVAPI.rules]
+	[Aladdin/Makefile:Aladdin/Makefile.in:MMDEVAPI.rules]
+	[Andor/Makefile:Andor/Makefile.in:MMDEVAPI.rules]
+	[AndorLaserCombiner/Makefile:AndorLaserCombiner/Makefile.in:MMDEVAPI.rules]
+	[Aquinas/Makefile:Aquinas/Makefile.in:MMDEVAPI.rules]
+	[Arduino/Makefile:Arduino/Makefile.in:MMDEVAPI.rules]
+	[ASIFW1000/Makefile:ASIFW1000/Makefile.in:MMDEVAPI.rules]
+	[ASIStage/Makefile:ASIStage/Makefile.in:MMDEVAPI.rules]
+	[ASIWPTR/Makefile:ASIWPTR/Makefile.in:MMDEVAPI.rules]
+	[CARVII/Makefile:CARVII/Makefile.in:MMDEVAPI.rules]
+	[Cobolt/Makefile:Cobolt/Makefile.in:MMDEVAPI.rules]
+	[CoherentCube/Makefile:CoherentCube/Makefile.in:MMDEVAPI.rules]
+	[Conix/Makefile:Conix/Makefile.in:MMDEVAPI.rules]
+	[Corvus/Makefile:Corvus/Makefile.in:MMDEVAPI.rules]
+	[DTOpenLayer/Makefile:DTOpenLayer/Makefile.in:MMDEVAPI.rules]
+	[DemoCamera/Makefile:DemoCamera/Makefile.in:MMDEVAPI.rules]
+	[FreeSerialPort/Makefile:FreeSerialPort/Makefile.in:MMDEVAPI.rules]
+	[ITC18/Makefile:ITC18/Makefile.in:MMDEVAPI.rules]
+	[ImageProcessorChain/Makefile:ImageProcessorChain/Makefile.in:MMDEVAPI.rules]
+	[K8055/Makefile:K8055/Makefile.in:MMDEVAPI.rules]
+	[K8061/Makefile:K8061/Makefile.in:MMDEVAPI.rules]
+	[LeicaDMI/Makefile:LeicaDMI/Makefile.in:MMDEVAPI.rules]
+	[LeicaDMR/Makefile:LeicaDMR/Makefile.in:MMDEVAPI.rules]
+	[Ludl/Makefile:Ludl/Makefile.in:MMDEVAPI.rules]
+	[LudlLow/Makefile:LudlLow/Makefile.in:MMDEVAPI.rules]
+	[LumencorSpectra/Makefile:LumencorSpectra/Makefile.in:MMDEVAPI.rules]
+	[MaestroServo/Makefile:MaestroServo/Makefile.in:MMDEVAPI.rules]
+	[MP285/Makefile:MP285/Makefile.in:MMDEVAPI.rules]
+	[Neos/Makefile:Neos/Makefile.in:MMDEVAPI.rules]
+	[Nikon/Makefile:Nikon/Makefile.in:MMDEVAPI.rules]
+	[NikonTE2000/Makefile:NikonTE2000/Makefile.in:MMDEVAPI.rules]
+	[nPoint/Makefile:nPoint/Makefile.in:MMDEVAPI.rules]
+	[OpenCVgrabber/Makefile:OpenCVgrabber/Makefile.in:MMDEVAPI.rules]
+	[Omicron/Makefile:Omicron/Makefile.in:MMDEVAPI.rules]
+	[ParallelPort/Makefile:ParallelPort/Makefile.in:MMDEVAPI.rules]
+	[Pecon/Makefile:Pecon/Makefile.in:MMDEVAPI.rules]
+	[PrecisExcite/Makefile:PrecisExcite/Makefile.in:MMDEVAPI.rules]
+	[Prior/Makefile:Prior/Makefile.in:MMDEVAPI.rules]
+	[PriorLegacy/Makefile:PriorLegacy/Makefile.in:MMDEVAPI.rules]
+	[PI/Makefile:PI/Makefile.in:MMDEVAPI.rules]
+	[PI_GCS/Makefile:PI_GCS/Makefile.in:MMDEVAPI.rules]
+	[PI_GCS_2/Makefile:PI_GCS_2/Makefile.in:MMDEVAPI.rules]
+	[PVCAM/Makefile:PVCAM/Makefile.in:MMDEVAPI.rules]
+	[Scientifica/Makefile:Scientifica/Makefile.in:MMDEVAPI.rules]
+	[Sapphire/Makefile:Sapphire/Makefile.in:MMDEVAPI.rules]
+	[ScionCam/Makefile:ScionCam/Makefile.in:MMDEVAPI.rules]
+	[Sensicam/Makefile:Sensicam/Makefile.in:MMDEVAPI.rules]
+	[SimpleCam/Makefile:SimpleCam/Makefile.in:MMDEVAPI.rules]
+	[SpectralLMM5/Makefile:SpectralLMM5/Makefile.in:MMDEVAPI.rules]
+	[Spot/Makefile:Spot/Makefile.in:MMDEVAPI.rules]
+	[SutterLambda/Makefile:SutterLambda/Makefile.in:MMDEVAPI.rules]
+	[SutterStage/Makefile:SutterStage/Makefile.in:MMDEVAPI.rules]
+	[SerialManager/Makefile:SerialManager/Makefile.in:MMDEVAPI.rules]
+	[SimpleAutofocus/Makefile:SimpleAutofocus/Makefile.in:MMDEVAPI.rules]
+	[Thorlabs/Makefile:Thorlabs/Makefile.in:MMDEVAPI.rules]
+	[ThorlabsDCxxxx/Makefile:ThorlabsDCxxxx/Makefile.in:MMDEVAPI.rules]
+	[ThorlabsFilterWheel/Makefile:ThorlabsFilterWheel/Makefile.in:MMDEVAPI.rules]
+	[ThorlabsSC10/Makefile:ThorlabsSC10/Makefile.in:MMDEVAPI.rules]
+	[USBManager/Makefile:USBManager/Makefile.in:MMDEVAPI.rules]
+	[Utilities/Makefile:Utilities/Makefile.in:MMDEVAPI.rules]
+	[Video4Linux/Makefile:Video4Linux/Makefile.in:MMDEVAPI.rules]
+	[Vincent/Makefile:Vincent/Makefile.in:MMDEVAPI.rules]
+	[QCam/Makefile:QCam/Makefile.in:MMDEVAPI.rules]
+	[XCite120PC_Exacte/Makefile:XCite120PC_Exacte/Makefile.in:MMDEVAPI.rules]
+	[XCiteLed/Makefile:XCiteLed/Makefile.in:MMDEVAPI.rules]
+	[Xcite/Makefile:Xcite/Makefile.in:MMDEVAPI.rules]
+	[Yokogawa/Makefile:Yokogawa/Makefile.in:MMDEVAPI.rules]
+	[ZeissCAN/Makefile:ZeissCAN/Makefile.in:MMDEVAPI.rules]
+	[ZeissCAN29/Makefile:ZeissCAN29/Makefile.in:MMDEVAPI.rules]
+	[dc1394/Makefile:dc1394/Makefile.in:MMDEVAPI.rules]
+	[kdv/Makefile:kdv/Makefile.in:MMDEVAPI.rules]
+)
 AC_OUTPUT
-##if $BUILD_TE2000_TRUE; then
-##   AC_OUTPUT (NikonTE2000/Makefile)
-##fi

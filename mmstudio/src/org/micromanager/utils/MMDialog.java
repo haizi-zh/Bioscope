@@ -28,13 +28,14 @@ import java.awt.Rectangle;
 import java.util.prefs.Preferences;
 
 import javax.swing.JDialog;
+import org.micromanager.MMStudioMainFrame;
 
 /**
  * Base class for the Micro-Manager dialogs.
  * Saves and restores window size and position.
  */
 public class MMDialog extends JDialog {
-   
+   private static final long serialVersionUID = -3144618980027203294L;
    private Preferences prefs_;
    private static final String WINDOW_X = "mmdlg_y";
    private static final String WINDOW_Y = "mmdlg_x";
@@ -43,13 +44,14 @@ public class MMDialog extends JDialog {
    
    public MMDialog() {
       super();
-      prefs_ = Preferences.userNodeForPackage(this.getClass());
+      prefs_ = Preferences.userNodeForPackage(this.getClass());      
+      setBackground(MMStudioMainFrame.getInstance().getBackgroundColor());
       
    }
    public MMDialog(Frame owner) {
       super(owner);
       prefs_ = Preferences.userNodeForPackage(this.getClass());
-      
+      setBackground(MMStudioMainFrame.getInstance().getBackgroundColor());
    }
    
    protected void loadPosition(int x, int y, int width, int height) {
@@ -59,6 +61,11 @@ public class MMDialog extends JDialog {
                 prefs_.getInt(WINDOW_HEIGHT, height));      
    }
    
+   protected void loadPosition(int x, int y) {
+      setLocation(prefs_.getInt(WINDOW_X, x),
+                prefs_.getInt(WINDOW_Y, y));
+   }
+
    protected void savePosition() {
       Rectangle r = getBounds();
       

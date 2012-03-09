@@ -30,9 +30,11 @@ import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.SwingUtilities;
 
 
 public class ProgressBar extends JPanel {
+   private static final long serialVersionUID = 1L;
    private JProgressBar progressBar;
    private JFrame frame;
 
@@ -60,11 +62,17 @@ public class ProgressBar extends JPanel {
 
    public void setProgress(int progress) {
       progressBar.setValue(progress);
+      progressBar.repaint();
    }
 
    public void setVisible(boolean visible) {
       frame.setVisible(visible);
    }
+
+    public void setRange(int min, int max) {
+        progressBar.setMinimum(min);
+        progressBar.setMaximum(max);
+    }
 
    /*
    public static void main(String[] args) {
@@ -72,7 +80,7 @@ public class ProgressBar extends JPanel {
       for (int i=0; i<=100; i++) {
          try {
             Thread.sleep(10);
-         } catch (InterruptedException ignore) {}      
+         } catch (InterruptedException ignore) { ReportingUtils.logError(ignore); }
          testBar.setProgress(i);
       }
       testBar.setVisible(false);

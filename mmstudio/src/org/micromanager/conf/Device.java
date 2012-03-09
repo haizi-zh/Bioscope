@@ -26,40 +26,60 @@ package org.micromanager.conf;
 
 import java.util.ArrayList;
 import java.util.Hashtable;
+import java.util.Vector;
+import mmcorej.BooleanVector;
 
 import mmcorej.CMMCore;
-import mmcorej.IntVector;
+import mmcorej.DeviceType;
+import mmcorej.LongVector;
 import mmcorej.MMCoreJ;
 import mmcorej.StrVector;
-import mmcorej.DeviceType;
+import org.micromanager.utils.PropertyItem;
 
 /**
  * Data structure describing a general MM device.
  * Part of the MicroscopeModel. 
  *
  */public class Device {
-   private String name_;
-   private String adapterName_;
-   private String library_;
-   private Property properties_[];
-   private ArrayList setupProperties_;
-   private String description_;
-   private DeviceType type_;
-   private Hashtable setupLabels_;
-   private double delayMs_;
-   private int numPos_ = 0;
-   //private String labels_[];
-   
+      private String name_;
+      private String adapterName_;
+      private String library_;
+      private PropertyItem properties_[];
+      private ArrayList<PropertyItem> setupProperties_;
+      private String description_;
+      private DeviceType type_;
+      private Hashtable<Integer, Label> setupLabels_;
+      private double delayMs_;
+      private boolean usesDelay_;
+      private int numPos_ = 0;
+      private String parentHub_;
+
+   public Device(String name, String lib, String adapterName, String descr, boolean discoverable, String master,Vector<String> slaves ) {
+      name_ = name;
+      library_ = lib;
+      adapterName_ = adapterName;
+      description_ = descr;
+      type_ = DeviceType.AnyType;
+      setupLabels_ = new Hashtable<Integer, Label>();
+      properties_ = new PropertyItem[0];
+      setupProperties_ = new ArrayList<PropertyItem>();
+      usesDelay_ = false;
+      delayMs_ = 0.0;
+      parentHub_ = new String();
+   }
+
    public Device(String name, String lib, String adapterName, String descr) {
       name_ = name;
       library_ = lib;
       adapterName_ = adapterName;
       description_ = descr;
       type_ = DeviceType.AnyType;
-      setupLabels_ = new Hashtable();
-      properties_ = new Property[0];
-      setupProperties_ = new ArrayList();
-      //labels_ = new String[0];
+      setupLabels_ = new Hashtable<Integer, Label>();
+      properties_ = new PropertyItem[0];
+      setupProperties_ = new ArrayList<PropertyItem>();
+      usesDelay_ = false;
+      delayMs_ = 0.0;
+      parentHub_ = new String();
    }
    public Device(String name, String lib, String adapterName) {
       this(name, lib, adapterName, "");
@@ -80,24 +100,27 @@ import mmcorej.DeviceType;
     */
    public void loadDataFromHardware(CMMCore core) throws Exception {
       StrVector propNames = core.getDevicePropertyNames(name_);
-      properties_ = new Property[(int) propNames.size()];
+      properties_ = new PropertyItem[(int) propNames.size()];
       
       // delayMs_ = core.getDeviceDelayMs(name_);
       // NOTE: do not load the delay value from the hardware
       // we will always use settings defined in the config file
       type_ = core.getDeviceType(name_);
+      usesDelay_ = core.usesDeviceDelay(name_);
       
       for (int j=0; j<propNames.size(); j++){
-         properties_[j] = new Property();
-         properties_[j].name_ = propNames.get(j);
-         properties_[j].value_ = core.getProperty(name_, propNames.get(j));
-         properties_[j].readOnly_ = core.isPropertyReadOnly(name_, propNames.get(j));
-         properties_[j].preInit_ = core.isPropertyPreInit(name_, propNames.get(j));
+         properties_[j] = new PropertyItem();
+         properties_[j].name = propNames.get(j);
+         properties_[j].value = core.getProperty(name_, propNames.get(j));
+         properties_[j].readOnly = core.isPropertyReadOnly(name_, propNames.get(j));
+         properties_[j].preInit = core.isPropertyPreInit(name_, propNames.get(j));
+         properties_[j].type = core.getPropertyType(name_, propNames.get(j));
          StrVector values = core.getAllowedPropertyValues(name_, propNames.get(j));
-         properties_[j].allowedValues_ = new String[(int)values.size()];
+         properties_[j].allowed = new String[(int)values.size()];
          for (int k=0; k<values.size(); k++){
-            properties_[j].allowedValues_[k] = values.get(k);
+            properties_[j].allowed[k] = values.get(k);
          }
+        properties_[j].sort();
       }
       
       if (type_ == DeviceType.StateDevice) {
@@ -109,10 +132,12 @@ import mmcorej.DeviceType;
    public static Device[] getLibraryContents(String libName, CMMCore core) throws Exception {
       StrVector adapterNames = core.getAvailableDevices(libName);
       StrVector devDescrs = core.getAvailableDeviceDescriptions(libName);
-      IntVector devTypes = core.getAvailableDeviceTypes(libName);
+      LongVector devTypes = core.getAvailableDeviceTypes(libName);
       
       Device[] devList = new Device[(int)adapterNames.size()];
       for (int i=0; i<adapterNames.size(); i++) {
+
+         // not all adapters fill this yet
          devList[i] = new Device("Undefined", libName, adapterNames.get(i), devDescrs.get(i));
          devList[i].setTypeByInt(devTypes.get(i));
       }
@@ -137,12 +162,22 @@ import mmcorej.DeviceType;
       return description_;
    }
    
-   public void addSetupProperty(Property prop) {
+   public void addSetupProperty(PropertyItem prop) {
       setupProperties_.add(prop);
    }
    
    public void addSetupLabel(Label lab) {
       setupLabels_.put(new Integer(lab.state_), lab);
+   }
+
+   public void getSetupLabelsFromHardware(CMMCore core) throws Exception {
+      // we can only add the state labels after initialization of the device!!
+      if (type_ == DeviceType.StateDevice)  {
+         StrVector stateLabels = core.getStateLabels(name_);
+         for (int state = 0; state < numPos_; state++) {
+            setSetupLabel(state, stateLabels.get(state));
+         }
+      }
    }
 
    public String getLibrary() {
@@ -153,46 +188,46 @@ import mmcorej.DeviceType;
       return properties_.length;
    }
    
-   public Property getProperty(int idx) {
-      return (Property) properties_[idx];
+   public PropertyItem getProperty(int idx) {
+      return properties_[idx];
    }
    
    public String getPropertyValue(String propName) throws MMConfigFileException {
 
-      Property p = findProperty(propName);
+      PropertyItem p = findProperty(propName);
       if (p == null)
          throw new MMConfigFileException("Property " + propName + " is not defined");
-      return p.value_;
+      return p.value;
    }
    
    public void setPropertyValue(String name, String value) throws MMConfigFileException {
-      Property p = findProperty(name);
+      PropertyItem p = findProperty(name);
       if (p == null)
          throw new MMConfigFileException("Property " + name + " is not defined");
-      p.value_ = value;
+      p.value = value;
    }
    
    public int getNumberOfSetupProperties() {
       return setupProperties_.size();
    }
    
-   public Property getSetupProperty(int idx) {
-      return (Property) setupProperties_.get(idx);
+   public PropertyItem getSetupProperty(int idx) {
+      return setupProperties_.get(idx);
    }
    
    public String getSetupPropertyValue(String propName) throws MMConfigFileException {
 
-      Property p = findSetupProperty(propName);
+      PropertyItem p = findSetupProperty(propName);
       if (p == null)
          throw new MMConfigFileException("Property " + propName + " is not defined");
-      return p.value_;
+      return p.value;
    }
    
    public void setSetupPropertyValue(String name, String value) throws MMConfigFileException {
-      Property p = findSetupProperty(name);
+      PropertyItem p = findSetupProperty(name);
       if (p == null)
          throw new MMConfigFileException("Property " + name + " is not defined");
-      p.value_ = value;
+      p.value = value;
    }
 
    public boolean isStateDevice() {
@@ -206,6 +241,11 @@ import mmcorej.DeviceType;
    public boolean isCamera() {
       return type_ == DeviceType.CameraDevice;
    }
+   
+   public boolean isHub() {
+      return type_ == DeviceType.HubDevice;
+   }
+
 
    public int getNumberOfSetupLabels() {
 
@@ -221,7 +261,7 @@ import mmcorej.DeviceType;
    }
    
    public void setSetupLabel(int pos, String label) {
-      Label l = (Label) setupLabels_.get(new Integer(pos));
+      Label l = setupLabels_.get(new Integer(pos));
       if (l == null) {
          // label does not exist so we must create one
          setupLabels_.put(new Integer(pos), new Label(label, pos));
@@ -236,19 +276,19 @@ import mmcorej.DeviceType;
       name_ = newName;
    }
    
-   public Property findProperty(String name) {
+   public PropertyItem findProperty(String name) {
       for (int i=0; i<properties_.length; i++) {
-         Property p = properties_[i];
-         if (p.name_.contentEquals(new StringBuffer().append(name)))
+         PropertyItem p = properties_[i];
+         if (p.name.contentEquals(new StringBuffer().append(name)))
             return p;
       }
       return null;
    }
    
-   public Property findSetupProperty(String name) {
+   public PropertyItem findSetupProperty(String name) {
       for (int i=0; i<setupProperties_.size(); i++) {
-         Property p = (Property)setupProperties_.get(i);
-         if (p.name_.contentEquals(new StringBuffer().append(name)))
+         PropertyItem p = setupProperties_.get(i);
+         if (p.name.contentEquals(new StringBuffer().append(name)))
             return p;
       }
       return null;
@@ -259,6 +299,10 @@ import mmcorej.DeviceType;
    
    public void setDelay(double delayMs) {
       delayMs_ = delayMs;
+   }
+   
+   public boolean usesDelay() {
+      return usesDelay_;
    }
    
    public int getNumberOfStates() {
@@ -278,4 +322,12 @@ import mmcorej.DeviceType;
       else
          return type_.toString();
    }
-}
+
+   public void setParentHub(String hub) {
+      parentHub_ = hub;
+   }
+   
+   public String getParentHub() {
+      return parentHub_;
+   }
+ }

@@ -33,7 +33,7 @@ import javax.swing.JFrame;
  * Saves and restores window size and position. 
  */
 public class MMFrame extends JFrame {
-   
+   private static final long serialVersionUID = 1L;
    private Preferences prefs_;
    private static final String WINDOW_X = "frame_y";
    private static final String WINDOW_Y = "frame_x";
@@ -53,7 +53,17 @@ public class MMFrame extends JFrame {
                 prefs_.getInt(WINDOW_WIDTH, width),
                 prefs_.getInt(WINDOW_HEIGHT, height));      
    }
-   
+
+   public void loadPosition(int x, int y) {
+      if (prefs_ == null)
+         return;
+      
+      setBounds(prefs_.getInt(WINDOW_X, x),
+                prefs_.getInt(WINDOW_Y, y),
+                getWidth(),
+                getHeight());      
+   }
+
    public void savePosition() {
       if (prefs_ == null)
          return;

@@ -38,6 +38,7 @@
 
 #include "CSU22.h"
 #include "CSU22Hub.h"
+#include <cstdio>
 #include <string>
 #include <math.h>
 #include "../../MMDevice/ModuleInterface.h"
@@ -106,7 +107,10 @@ MODULE_API void DeleteDevice(MM::Device* pDevice)
 
 Hub::Hub() :
    initialized_(false),
-   port_("Undefined")
+   port_("Undefined"),
+   minSpeed_(1200),
+   maxSpeed_(5000),
+   currentSpeed_(5000)
 {
    InitializeDefaultErrorMessages();
 
@@ -153,9 +157,12 @@ int Hub::Initialize()
    if (DEVICE_OK != ret)
       return ret;
 
-   ret = UpdateStatus();
-   if (ret != DEVICE_OK)
-      return ret;
+   // Drive Speed
+   CPropertyAction* pAct = new CPropertyAction (this, &Hub::OnSpeed);
+   ret = CreateProperty("DriveSpeed", "1500", MM::Integer, false, pAct); 
+   if (ret != DEVICE_OK) 
+      return ret; 
+   SetPropertyLimits("DriveSpeed", minSpeed_, maxSpeed_);
 
    initialized_ = true;
    
@@ -199,15 +206,45 @@ int Hub::OnPort(MM::PropertyBase* pProp, MM::ActionType eAct)
    return DEVICE_OK;
 }
 
+/*
+ * Speed is read back from the device
+ */
+int Hub::OnSpeed(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+   if (eAct == MM::BeforeGet)
+   {
+      // Check current speed of the disk
+      int ret = g_hub.GetDriveSpeedPosition(*this, *GetCoreCallback(), currentSpeed_);
+      if (DEVICE_OK != ret)
+         return ret;
+      // return speed as we know it
+      pProp->Set((long)currentSpeed_);
+   }
+   else if (eAct == MM::AfterSet)
+   {
+      long speed;
+      pProp->Get(speed);
+      if (speed == currentSpeed_)
+         return DEVICE_OK;
+      int ret = g_hub.SetDriveSpeedPosition(*this, *GetCoreCallback(), speed);
+      if (ret == DEVICE_OK) {
+         currentSpeed_ = speed;
+         return DEVICE_OK;
+      }
+      else
+         return  ret;
+   }
+   return DEVICE_OK;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // CSU22 ND Filters
 ///////////////////////////////////////////////////////////////////////////////
 NDFilter::NDFilter () :
    initialized_ (false),
-   name_ (g_CSU22NDFilter),
+   numPos_ (2),
    pos_ (1),
-   numPos_ (2)
+   name_ (g_CSU22NDFilter)
 {
    InitializeDefaultErrorMessages();
 
@@ -319,12 +356,14 @@ int NDFilter::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
 ///////////////////////////////////////////////////////////////////////////////
 FilterSet::FilterSet () :
    initialized_ (false),
-   name_ (g_CSU22FilterSet),
+   changedTime_(0),
    pos_ (1),
+   name_ (g_CSU22FilterSet),
    numPos_ (5)
 {
    InitializeDefaultErrorMessages();
 
+   EnableDelay();
    // Todo: Add custom messages
 }
 
@@ -341,7 +380,6 @@ void FilterSet::GetName(char* name) const
 
 int FilterSet::Initialize()
 {
-   printf("Initializing Filter\n");
    // Name
    int ret = CreateProperty(MM::g_Keyword_Name, name_.c_str(), MM::String, true);
    if (DEVICE_OK != ret)
@@ -352,21 +390,18 @@ int FilterSet::Initialize()
    if (DEVICE_OK != ret)
       return ret;
 
-   printf("Filter State\n");
    // State
    CPropertyAction* pAct = new CPropertyAction (this, &FilterSet::OnState);
    ret = CreateProperty(MM::g_Keyword_State, "0", MM::Integer, false, pAct); 
    if (ret != DEVICE_OK) 
       return ret; 
 
-   printf("Filter State Allowed Values\n");
+   AddAllowedValue(MM::g_Keyword_State, "0");
    AddAllowedValue(MM::g_Keyword_State, "1");
    AddAllowedValue(MM::g_Keyword_State, "2");
    AddAllowedValue(MM::g_Keyword_State, "3");
    AddAllowedValue(MM::g_Keyword_State, "4");
-   AddAllowedValue(MM::g_Keyword_State, "5");
 
-   printf("Filter State Labels\n");
    // Label                                                                  
    pAct = new CPropertyAction (this, &CStateBase::OnLabel);                  
    ret = CreateProperty(MM::g_Keyword_Label, "Undefined", MM::String, false, pAct);        
@@ -374,16 +409,17 @@ int FilterSet::Initialize()
       return ret;                                                            
                                                                              
    // create default positions and labels
-   SetPositionLabel(1, "State-1");                               
-   SetPositionLabel(2, "State-2");                               
-   SetPositionLabel(3, "State-3");                               
-   SetPositionLabel(4, "State-4");                               
-   SetPositionLabel(5, "State-5");                               
+   SetPositionLabel(0, "Filter-1");                               
+   SetPositionLabel(1, "Filter-2");                               
+   SetPositionLabel(2, "Filter-3");                               
+   SetPositionLabel(3, "Filter-4");                               
+   SetPositionLabel(4, "Filter-5");                               
 
    ret = UpdateStatus();
    if (ret != DEVICE_OK) 
       return ret; 
 
+   changedTime_ = GetCurrentMMTime();
    initialized_ = true;
 
    return DEVICE_OK;
@@ -392,7 +428,11 @@ int FilterSet::Initialize()
 
 bool FilterSet::Busy()
 {
-   // Who knows?
+   MM::MMTime interval = GetCurrentMMTime() - changedTime_;
+  
+   if (interval < (1000.0 * GetDelayMs() ))
+       return true;
+
    return false;
 }
 
@@ -414,12 +454,16 @@ int FilterSet::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
    if (eAct == MM::BeforeGet)
    {
       // return pos as we know it
-      pProp->Set((long)pos_);
+      pProp->Set((long)(pos_ - 1));
    }
    else if (eAct == MM::AfterSet)
    {
-      long pos, dichroic, filter;
+      long pos; 
+      long dichroic = 1;
+      long filter = 1;
       pProp->Get(pos);
+      pos +=1;
+
       if (pos == pos_)
          return DEVICE_OK;
       if (pos < 1)
@@ -440,6 +484,7 @@ int FilterSet::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
       int ret = g_hub.SetFilterSetPosition(*this, *GetCoreCallback(), filter, dichroic);
       if (ret == DEVICE_OK) {
          pos_ = pos;
+         changedTime_ = GetCurrentMMTime();
          return DEVICE_OK;
       }
       else
@@ -557,7 +602,7 @@ int Shutter::GetOpen(bool &open)
    return DEVICE_OK;
 }
 
-int Shutter::Fire(double deltaT)
+int Shutter::Fire(double /*deltaT*/)
 {
    return DEVICE_UNSUPPORTED_COMMAND;  
 }
@@ -601,8 +646,8 @@ int Shutter::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
 ///////////////////////////////////////////////////////////////////////////////
 DriveSpeed::DriveSpeed () :
    initialized_ (false),
-   name_ (g_CSU22DriveSpeed),
    driveSpeedBusy_ (false),
+   name_ (g_CSU22DriveSpeed),
    min_ (1500),
    max_ (5000),
    current_ (1500)

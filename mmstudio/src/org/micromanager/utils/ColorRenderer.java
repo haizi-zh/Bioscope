@@ -23,19 +23,21 @@
 //
 package org.micromanager.utils;
 
+import java.awt.Color;
+import java.awt.Component;
+
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.border.Border;
 import javax.swing.table.TableCellRenderer;
-import java.awt.Color;
-import java.awt.Component;
 
 /**
  * Color chooser cell renderer. 
  */
 public class ColorRenderer extends JLabel implements TableCellRenderer {
-    Border unselectedBorder = null;
+   private static final long serialVersionUID = -2539377758420096159L;
+   Border unselectedBorder = null;
     Border selectedBorder = null;
     boolean isBordered = true;
 
@@ -49,7 +51,12 @@ public class ColorRenderer extends JLabel implements TableCellRenderer {
                             boolean isSelected, boolean hasFocus,
                             int row, int column) {
         Color newColor = (Color)color;
-        setBackground(newColor);
+        if (table.isEnabled()) {
+            setBackground(newColor);
+        } else {
+            Color dimColor = mixColors(newColor,table.getBackground(),0.5);
+            setBackground(dimColor);
+        }
         if (isBordered) {
             if (isSelected) {
                 if (selectedBorder == null) {
@@ -70,5 +77,12 @@ public class ColorRenderer extends JLabel implements TableCellRenderer {
                                      + newColor.getGreen() + ", "
                                      + newColor.getBlue());
         return this;
+    }
+
+    private Color mixColors(Color fgColor, Color bgColor, double transparency) {
+        return new Color( (int) (fgColor.getRed() * transparency + bgColor.getRed() * (1-transparency)),
+                          (int) (fgColor.getGreen() * transparency + bgColor.getGreen() * (1-transparency)),
+                          (int) (fgColor.getBlue() * transparency + bgColor.getBlue() * (1-transparency))
+                          );
     }
 }

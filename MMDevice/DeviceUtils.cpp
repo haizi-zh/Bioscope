@@ -18,15 +18,17 @@
 //                INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
 // CVS:           $Id$
 //
-
 #include "DeviceUtils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#pragma warning(disable : 4996)
+#include <sstream>
 
 #ifdef WIN32
+   #define WIN32_LEAN_AND_MEAN
+   #include <windows.h>
    #define snprintf _snprintf 
+#pragma warning(disable : 4996)
 #endif
 
 char CDeviceUtils::m_pszBuffer[MM::MaxStrLength]={""};
@@ -65,6 +67,14 @@ const char* CDeviceUtils::ConvertToString(long lnVal)
 }
 
 /**
+ * Convert int value to string.
+ */
+const char* CDeviceUtils::ConvertToString(int intVal)
+{
+   return ConvertToString((long)intVal);
+}
+
+/**
  * Convert double value to string.
  */
 const char* CDeviceUtils::ConvertToString(double dVal)
@@ -73,6 +83,34 @@ const char* CDeviceUtils::ConvertToString(double dVal)
    snprintf(m_pszBuffer, MM::MaxStrLength-1, "%.2f", dVal); 
    return m_pszBuffer;
 }
+
+/**
+ * Convert boolean value to string.
+ */
+const char* CDeviceUtils::ConvertToString(bool val)
+{
+   snprintf(m_pszBuffer, MM::MaxStrLength-1, "%s", val ? "1" : "0"); 
+   return m_pszBuffer;
+}
+
+
+// from a vectors of chars make a string like "0x00 0x01 0x02....
+std::string CDeviceUtils::HexRep(std::vector<unsigned char>  values)
+{
+   std::ostringstream ret;
+   for(std::vector<unsigned char>::iterator i = values.begin(); i != values.end(); ++i)
+   {
+      if (i!=values.begin())
+         ret << " ";
+      std::ios_base::fmtflags restore = ret.flags(  std::ios::hex | std::ios::showbase );
+      ret << (unsigned int)(*i);
+      ret.flags(restore);
+   }
+   return ret.str();
+
+}
+
+
 
 /**
  * Parse the string and return an array of tokens.
@@ -98,3 +136,86 @@ void CDeviceUtils::Tokenize(const std::string& str, std::vector<std::string>& to
     }
 }
 
+/**
+ * Block the current thread for the specified interval in milliseconds.
+ */
+void CDeviceUtils::SleepMs(long periodMs)
+{
+#ifdef WIN32
+   Sleep(periodMs);
+#else
+   usleep(periodMs * 1000);
+#endif
+}
+
+/**
+ * Yield to other threads for the specified interval in microseconds.
+ */
+void CDeviceUtils::NapMicros(unsigned long period)
+{
+#ifdef WIN32
+   Sleep(period/1000);
+#else
+   usleep(period);
+#endif
+}
+
+
+bool CDeviceUtils::CheckEnvironment(std::string env)
+{
+   bool bvalue = false;
+   if( 0 < env.length())
+   {
+      char *pvalue = ::getenv(env.c_str());
+      if( 0 != pvalue)
+      {
+         if( 0 != *pvalue)
+         {
+            char initial =  (char)tolower(*pvalue);
+            bvalue = ('0' != initial) && ('f' != initial) && ( 'n' != initial);
+         }
+      }
+   }
+   return bvalue;
+}
+
+
+
+#ifdef _WINDOWS
+ 
+int gettimeofday(struct timeval *tv, struct timezone *tz)
+{
+  FILETIME ft;
+  unsigned __int64 tmpres = 0;
+  static int tzflag;
+ 
+  if (NULL != tv)
+  {
+    GetSystemTimeAsFileTime(&ft);
+ 
+    tmpres |= ft.dwHighDateTime;
+    tmpres <<= 32;
+    tmpres |= ft.dwLowDateTime;
+ 
+    /*converting file time to unix epoch*/
+    tmpres -= DELTA_EPOCH_IN_MICROSECS; 
+    tmpres /= 10;  /*convert into microseconds*/
+    tv->tv_sec = (long)(tmpres / 1000000UL);
+    tv->tv_usec = (long)(tmpres % 1000000UL);
+  }
+ 
+  if (NULL != tz)
+  {
+    if (!tzflag)
+    {
+      _tzset();
+      tzflag++;
+    }
+    tz->tz_minuteswest = _timezone / 60;
+    tz->tz_dsttime = _daylight;
+  }
+ 
+  return 0;
+}
+
+#endif

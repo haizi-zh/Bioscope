@@ -37,12 +37,13 @@ import javax.swing.SpringLayout;
 import javax.swing.border.LineBorder;
 
 import org.micromanager.utils.MMFrame;
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * Histogram window. 
  */
 public class HistogramFrame extends MMFrame {
-
+   private static final long serialVersionUID = 8576500518906629812L;
    private JTextField fldYMax;
    private JTextField fldYMin;
    private JTextField fldXMax;
@@ -55,7 +56,7 @@ public class HistogramFrame extends MMFrame {
          GraphFrame frame = new GraphFrame();
          frame.setVisible(true);
       } catch (Exception e) {
-         e.printStackTrace();
+         ReportingUtils.showError(e);
       }
    }
    

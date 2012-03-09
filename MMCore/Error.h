@@ -31,6 +31,7 @@
 #include <sstream>
 #include "ErrorCodes.h"
 
+
 ///////////////////////////////////////////////////////////////////////////////
 // CMMError
 // --------
@@ -40,13 +41,15 @@ class CMMError
 {
 public:
    CMMError(const char* msg, int code) :
-      specificMsg_(msg),
-      errCode_(code) {}
+      errCode_(code),
+      specificMsg_(msg)
+      {}
 
    CMMError(const char* specificMsg, const char* coreMsg, int code) :
+      errCode_(code),
       specificMsg_(specificMsg),
-      coreMsg_(coreMsg),
-      errCode_(code) {}
+      coreMsg_(coreMsg)
+      {}
 
    CMMError(int code) :
       errCode_(code) {}
@@ -56,19 +59,26 @@ public:
    virtual std::string getMsg()
    {
       std::ostringstream msg;
-      msg << "Error code: " << errCode_ << std::endl;
-      if (!specificMsg_.empty())
+      if (!specificMsg_.empty()) {
          msg << specificMsg_ << std::endl;
+      } else {
+         msg << "Error code: " << errCode_ << std::endl;
+      }
       msg << coreMsg_;
       return msg.str();
    }
    int getCode() {return errCode_;}
    void setCoreMsg(const char* msg) {coreMsg_ = msg;}
 
+   virtual std::string getCoreMsg()
+   {
+      return coreMsg_;
+   }
+
 private:
-   std::string coreMsg_;
-   std::string specificMsg_;
    long errCode_;
+   std::string specificMsg_;
+   std::string coreMsg_;
 };
 
 #endif //_ERROR_H_

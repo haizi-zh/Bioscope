@@ -25,10 +25,14 @@
 
 #include "MMDeviceConstants.h"
 #include <string>
+#include <cstring>
+#include <cstdlib>
 #include <vector>
 #include <map>
 
-#pragma warning(disable : 4996) // disable warning for deperecated CRT functions on Windows 
+#ifdef WIN32
+#pragma warning(disable : 4996) // disable warning for deprecated CRT functions on Windows 
+#endif
 
 namespace MM {
 
@@ -39,6 +43,8 @@ namespace MM {
 class PropertyBase
 {
 public:
+   virtual ~PropertyBase() {}
+
    // property type
    virtual PropertyType GetType() = 0;
    
@@ -50,6 +56,21 @@ public:
    virtual bool Get(double& dVal) const = 0;
    virtual bool Get(long& lVal) const = 0;
    virtual bool Get(std::string& strVal) const = 0;
+
+   // Limits
+   virtual bool HasLimits() const = 0;
+   virtual double GetLowerLimit() const = 0;
+   virtual double GetUpperLimit() const = 0;
+   virtual bool SetLimits(double lowerLimit, double upperLimit) = 0;
+
+   // Sequence
+   virtual void SetSequenceable(long sequenceSize) = 0;
+   virtual  long GetSequenceMaxSize() const = 0;
+   virtual std::vector<std::string> GetSequence() const = 0;
+   virtual int ClearSequence() = 0;
+   virtual int AddToSequence(const char* value) = 0;
+   virtual int SendSequence() = 0;
+
 };
 
 /**
@@ -58,7 +79,8 @@ public:
 class ActionFunctor
 {
 public:
-   virtual int Execute(PropertyBase* pProp, ActionType eAct)=0;        // call using function
+   virtual ~ActionFunctor() {}
+   virtual int Execute(PropertyBase* pProp, ActionType eAct) = 0;
 };
 
 /**
@@ -68,25 +90,62 @@ template <class T>
 class Action : public ActionFunctor
 {
 private:
-   int (T::*fpt_)(PropertyBase* pProp, ActionType eAct);
    T* pObj_;
+   int (T::*fpt_)(PropertyBase* pProp, ActionType eAct);
 
 public:
    Action(T* pObj, int(T::*fpt)(PropertyBase* pProp, ActionType eAct) ) :
       pObj_(pObj), fpt_(fpt) {}
+      ~Action() {}
 
-      int Execute(PropertyBase* pProp, ActionType eAct)
-      {return (*pObj_.*fpt_)(pProp, eAct);};
+   int Execute(PropertyBase* pProp, ActionType eAct)
+      { return (*pObj_.*fpt_)(pProp, eAct);};
+};
+
+/** 
+ * Extended device action implementation.
+ * It takes one additional long parameter whic can be used as
+ * a command identifier inside the command handler
+ */
+template <class T>
+class ActionEx : public ActionFunctor
+{
+private:
+	T* pObj_;
+   int (T::*fpt_)(PropertyBase* pProp, ActionType eAct, long param);
+   long param_;
+
+public:
+	ActionEx(T* pObj, int(T::*fpt)(PropertyBase* pProp, ActionType eAct, long data), long data) :
+      pObj_(pObj), fpt_(fpt), param_(data) {}; 
+   ~ActionEx() {}
+	int Execute(MM::PropertyBase* pProp, MM::ActionType eAct)
+      { return (*pObj_.*fpt_)(pProp, eAct, param_);};
 };
 
 /**
- * Porperty API with most of the Property mechanism implemented.
+ * Property API with most of the Property mechanism implemented.
  */
 class Property : public PropertyBase
 {
 public:
-   Property() : readOnly_(false), fpAction_(0), cached_(false), hasData_(false), initStatus_(true) {}      
-   virtual ~Property(){delete fpAction_;}
+   Property() :
+      readOnly_(false),
+      fpAction_(0),
+      cached_(false),
+      hasData_(false),
+      initStatus_(true),
+      limits_(false),
+      sequenceable_(false),
+      sequenceMaxSize_(0),
+      sequenceEvents_(),
+      lowerLimit_(0.0),
+      upperLimit_(0.0)
+      {}      
+   virtual ~Property()
+   {
+      delete fpAction_;
+   }
             
    bool GetCached()const {return cached_;}
    void SetCached(bool bState=true) {cached_ = bState;}
@@ -115,11 +174,118 @@ public:
 
    // discrete set of allowed values
    std::vector<std::string> GetAllowedValues() const;
-   void ClearAllowedValues() {values_.clear();}
+
+   void ClearAllowedValues() 
+   {
+      values_.clear();
+   }
+
    void AddAllowedValue(const char* value);
    void AddAllowedValue(const char* value, long data);
    bool IsAllowed(const char* value) const;
    bool GetData(const char* value, long& data) const;
+
+   bool HasLimits() const 
+   {
+      return limits_;
+   }
+
+   double GetLowerLimit() const 
+   {
+      return limits_ ? lowerLimit_ : 0.0;
+   }
+
+   double GetUpperLimit() const 
+   {
+      return limits_ ? upperLimit_ : 0.0;
+   }
+
+   bool SetLimits(double lowerLimit, double upperLimit)
+   {
+      limits_ = true;
+      // do not allow limits for properties with discrete values defined
+      if (values_.size() > 0)
+         limits_ = false;
+
+      if (lowerLimit >= upperLimit)
+         limits_ = false;
+
+      lowerLimit_ = lowerLimit;
+      upperLimit_ = upperLimit;
+
+      return limits_;
+   }
+
+   bool IsSequenceable() 
+   {
+      if (fpAction_)
+         fpAction_->Execute(this, MM::IsSequenceable);
+      return sequenceable_;
+   }
+
+   void SetSequenceable(long sequenceMaxSize);
+
+   long GetSequenceMaxSize() const 
+   {
+      return sequenceMaxSize_;
+   }
+
+   int ClearSequence() 
+   {
+      try
+      {
+         if (sequenceEvents_.size() > 0){
+            sequenceEvents_.clear();
+         }
+      } catch (...)
+      {
+         return MM_CODE_ERR;
+      }
+
+      return DEVICE_OK;
+   }
+
+   int AddToSequence(const char* value) 
+   {
+      try
+      {
+         sequenceEvents_.push_back(value);
+         if (sequenceEvents_.size() > (unsigned) GetSequenceMaxSize())           
+            return DEVICE_SEQUENCE_TOO_LARGE;
+      } catch (...)
+      {
+         return MM_CODE_ERR;
+      }
+
+      return DEVICE_OK;
+   }
+
+   int SendSequence() 
+   {
+      if (fpAction_)
+         return fpAction_->Execute(this, AfterLoadSequence);
+
+      return DEVICE_OK; // Return an error instead???
+   }
+
+   std::vector<std::string> GetSequence() const
+   {
+      return sequenceEvents_;
+   }
+
+   int StartSequence() 
+   {
+      if (fpAction_)
+         return fpAction_->Execute(this, MM::StartSequence);
+      return DEVICE_OK;  // Return an error instead???
+   }
+ 
+   int StopSequence() 
+   {
+      if (fpAction_)
+         return fpAction_->Execute(this, MM::StopSequence);
+      return DEVICE_OK;  // Return an error instead???
+   }
 
    // virtual API
    // ~~~~~~~~~~~
@@ -131,11 +297,17 @@ public:
 
 protected:
    bool readOnly_;
-   std::map<std::string, long> values_; // allowed values
-   bool hasData_;
    ActionFunctor* fpAction_;
    bool cached_;
+   bool hasData_;
    bool initStatus_;
+   bool limits_;
+   bool sequenceable_;
+   double lowerLimit_;
+   double upperLimit_;
+   long sequenceMaxSize_;
+   std::map<std::string, long> values_; // allowed values
+   std::vector<std::string> sequenceEvents_;
 };
 
 /**
@@ -158,6 +330,8 @@ public:
    bool Get(long& val) const ;
    bool Get(std::string& val) const;
 
+   bool SetLimits(double /*lowerLimit*/, double /*upperLimit*/) {return false;}
+
    Property* Clone() const;
 
    // operators
@@ -173,7 +347,7 @@ private:
 class FloatProperty : public Property
 {
 public:
-   FloatProperty(): Property(), value_(0.0) {}      
+   FloatProperty(): Property(), value_(0.0), decimalPlaces_(4) {}      
    virtual ~FloatProperty() {};
             
    PropertyType GetType() {return Float;}
@@ -193,7 +367,9 @@ public:
    FloatProperty& operator=(const FloatProperty& rhs);
 
 private:
+   double Truncate(double dVal);
    double value_;
+   int decimalPlaces_;
 };
 
 /**
@@ -237,6 +413,7 @@ public:
    int CreateProperty(const char* name, const char* value, PropertyType eType, bool bReadOnly, ActionFunctor* pAct=0, bool initStatus=false);
    int RegisterAction(const char* name, ActionFunctor* fpAct);
    int SetAllowedValues(const char* name, std::vector<std::string>& values);
+   int ClearAllowedValues(const char* name);
    int AddAllowedValue(const char* name, const char* value, long data);
    int AddAllowedValue(const char* name, const char* value);
    int GetPropertyData(const char* name, const char* value, long& data);
@@ -253,51 +430,10 @@ public:
    int Apply(const char* Name);
 
 private:
-   /*
-   template <typename T>
-   int GetVal(const char* PropName, T &val);
-   template <typename T>
-   int SetVal(const char* PropName, const T val);
-   */
    typedef std::map<std::string, Property*> CPropArray;
    CPropArray properties_;
 };
 
-/*
-template <typename T>
-inline int CMMPropertyCollection::SetVal(const char* PropName, const T &val)
-{
-   Property* pProp = Find(PropName);
-   if (!pProp)
-      return DEVICE_INVALID_PROPERTY; // name not found
-
-   if (pProp->IsAllowed(Value))
-   {
-      pProp->Set(val);
-      return pProp->Apply();
-   }
-   else
-      return DEVICE_INVALID_PROPERTY_VALUE;
-}
-
-template <typename T>
-int CMMPropertyCollection::Get(const char* PropName, T& val) const
-{
-   Property* pProp = Find(PropName);
-   if (!pProp)
-      return DEVICE_INVALID_PROPERTY; // name not found
-
-   if (!pProp->GetCached())
-   {
-      int nRet = pProp->Update();
-      if (nRet != DEVICE_OK)
-         return nRet;
-   }
-   pProp->Get(strValue);
-   return DEVICE_OK;
-}
-*/
 
 } // namespace MM
-
 #endif //_MMPROPERTY_H_

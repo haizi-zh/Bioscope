@@ -33,6 +33,12 @@ const char* g_DeviceNameDTOLSwitch = "DTOL-Switch";
 const char* g_DeviceNameDTOLShutter = "DTOL-Shutter";
 const char* g_DeviceNameDTOLDA0 = "DTOL-DAC-0";
 const char* g_DeviceNameDTOLDA1 = "DTOL-DAC-1";
+const char* g_DeviceNameDTOLDA2 = "DTOL-DAC-2";
+const char* g_DeviceNameDTOLDA3 = "DTOL-DAC-3";
+
+const char* g_volts = "Volts";
+const char* g_PropertyMin = "MinV";
+const char* g_PropertyMax = "MaxV";
 
 // Global state of the DTOL switch to enable simulation of the shutter device.
 // The virtual shutter device uses this global variable to restore state of the switch
@@ -171,6 +177,8 @@ MODULE_API void InitializeModuleData()
    AddAvailableDeviceName(g_DeviceNameDTOLShutter);
    AddAvailableDeviceName(g_DeviceNameDTOLDA0);
    AddAvailableDeviceName(g_DeviceNameDTOLDA1);
+   AddAvailableDeviceName(g_DeviceNameDTOLDA2);
+   AddAvailableDeviceName(g_DeviceNameDTOLDA3);
 }
 
 MODULE_API MM::Device* CreateDevice(const char* deviceName)
@@ -193,6 +201,14 @@ MODULE_API MM::Device* CreateDevice(const char* deviceName)
    else if (strcmp(deviceName, g_DeviceNameDTOLDA1) == 0)
    {
       return new CDTOLDA(1, g_DeviceNameDTOLDA1);
+   }
+      else if (strcmp(deviceName, g_DeviceNameDTOLDA2) == 0)
+   {
+      return new CDTOLDA(2, g_DeviceNameDTOLDA2);
+   }
+   else if (strcmp(deviceName, g_DeviceNameDTOLDA3) == 0)
+   {
+      return new CDTOLDA(3, g_DeviceNameDTOLDA3);
    }
 
 
@@ -330,7 +346,7 @@ int CDTOLSwitch::OnState(MM::PropertyBase* pProp, MM::ActionType eAct)
 // ~~~~~~~~~~~~~~~~~~~~~~
 
 CDTOLDA::CDTOLDA(unsigned channel, const char* name) :
-      busy_(false), minV_(0.0), maxV_(0.0), encoding_(0), resolution_(0), channel_(channel), name_(name)
+      busy_(false), minV_(0.0), maxV_(0.0), volts_(0.0), gatedVolts_(0.0), encoding_(0), resolution_(0), channel_(channel), name_(name), gateOpen_(true)
 {
    InitializeDefaultErrorMessages();
 
@@ -339,6 +355,10 @@ CDTOLDA::CDTOLDA(unsigned channel, const char* name) :
    SetErrorText(ERR_INITIALIZE_FAILED, "Initialization of the device failed");
    SetErrorText(ERR_WRITE_FAILED, "Failed to write data to the device");
    SetErrorText(ERR_CLOSE_FAILED, "Failed closing the device");
+
+   CreateProperty(g_PropertyMin, "0.0", MM::Float, false, 0, true);
+   CreateProperty(g_PropertyMax, "5.0", MM::Float, false, 0, true);
+      
 }
 
 CDTOLDA::~CDTOLDA()
@@ -386,10 +406,22 @@ int CDTOLDA::Initialize()
    if (DEVICE_OK != nRet)
       return nRet;
 
-   // State
+   // Voltage
    // -----
    CPropertyAction* pAct = new CPropertyAction (this, &CDTOLDA::OnVolts);
-   nRet = CreateProperty("Volts", "0.0", MM::Float, false, pAct);
+   nRet = CreateProperty(g_volts, "0.0", MM::Float, false, pAct);
+   if (nRet != DEVICE_OK)
+      return nRet;
+
+   double minV(0.0);
+   nRet = GetProperty(g_PropertyMin, minV);
+   assert (nRet == DEVICE_OK);
+
+   double maxV(0.0);
+   nRet = GetProperty(g_PropertyMax, maxV);
+   assert (nRet == DEVICE_OK);
+
+   nRet = SetPropertyLimits(g_volts, minV, maxV);
    if (nRet != DEVICE_OK)
       return nRet;
 
@@ -412,11 +444,47 @@ int CDTOLDA::Shutdown()
    return DEVICE_OK;
 }
 
+int CDTOLDA::SetSignal(double volts)
+{
+   return SetProperty(g_volts, CDeviceUtils::ConvertToString(volts));
+}
+
 int CDTOLDA::WriteToPort(long value)
 {
    int ret = olDaPutSingleValue(board.hdass_da, value, channel_, 1.0 /*gain*/);
    if (ret != OLNOERROR)
       return ret;
+
+   return DEVICE_OK;
+}
+
+int CDTOLDA::SetVolts(double volts)
+{
+   if (volts > maxV_ || volts < minV_)
+      return DEVICE_RANGE_EXCEEDED;
+
+   long value = (long) ((1L<<resolution_)/((float)maxV_ - (float)minV_) * (volts - (float)minV_));
+   value = min((1L<<resolution_)-1,value);
+
+   if (encoding_ != OL_ENC_BINARY) {
+      // convert to 2's comp by inverting the sign bit
+      long sign = 1L << (resolution_ - 1);
+      value ^= sign;
+      if (value & sign)           //sign extend
+         value |= 0xffffffffL << resolution_;
+   }
+   return WriteToPort(value);
+}
+
+int CDTOLDA::GetLimits(double& minVolts, double& maxVolts)
+{
+   int nRet = GetProperty(g_PropertyMin, minVolts);
+   if (nRet == DEVICE_OK)
+      return nRet;
+
+   nRet = GetProperty(g_PropertyMax, maxVolts);
+   if (nRet == DEVICE_OK)
+      return nRet;
 
    return DEVICE_OK;
 }
@@ -435,18 +503,7 @@ int CDTOLDA::OnVolts(MM::PropertyBase* pProp, MM::ActionType eAct)
    {
       double volts;
       pProp->Get(volts);
-      
-      long value = (long) ((1L<<resolution_)/((float)maxV_ - (float)minV_) * (volts - (float)minV_));
-      value = min((1L<<resolution_)-1,value);
-
-      if (encoding_ != OL_ENC_BINARY) {
-         // convert to 2's comp by inverting the sign bit
-         long sign = 1L << (resolution_ - 1);
-         value ^= sign;
-         if (value & sign)           //sign extend
-            value |= 0xffffffffL << resolution_;
-      }
-      return WriteToPort(value);
+      return SetVolts(volts);
    }
 
    return DEVICE_OK;
@@ -460,6 +517,7 @@ int CDTOLDA::OnVolts(MM::PropertyBase* pProp, MM::ActionType eAct)
 CDTOLShutter::CDTOLShutter() : initialized_(false), name_(g_DeviceNameDTOLShutter), openTimeUs_(0)
 {
    InitializeDefaultErrorMessages();
+   EnableDelay();
 }
 
 CDTOLShutter::~CDTOLShutter()

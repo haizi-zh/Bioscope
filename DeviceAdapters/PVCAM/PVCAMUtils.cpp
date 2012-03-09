@@ -22,20 +22,27 @@
 //
 // CVS:           $Id$
 
+
 #ifdef WIN32
+#pragma warning (disable : 4800)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
 #ifdef WIN32
-#include "../../../3rdparty/RoperScientific/Windows/PvCam/SDK/Headers/master.h"
-#include "../../../3rdparty/RoperScientific/Windows/PvCam/SDK_PH/Headers/pvcam.h"
-#else
+#include "Headers/master.h"
+#include "Headers/pvcam.h"
+#endif
+
 #ifdef __APPLE__
 #define __mac_os_x
 #include <PVCAM/master.h>
 #include <PVCAM/pvcam.h>
 #endif
+
+#ifdef linux
+#include <pvcam/master.h>
+#include <pvcam/pvcam.h>
 #endif
 
 #include "PVCAMUtils.h"
@@ -251,3 +258,5 @@ bool GetLongParam_PvCam
 
     return(status);
 }   /* end GetLongParam_PvCam */
+
+

@@ -42,6 +42,7 @@
 
 #define ERR_OFFSET 10100
 
+int ClearPort(MM::Device& device, MM::Core& core);
 
 class Shutter : public CShutterBase<Shutter>
 {
@@ -72,7 +73,9 @@ private:
    const int id_;
    std::string name_;
    std:: string port_;
-   long openTimeUs_;
+   MM::MMTime changedTime_;
+
+   Shutter& operator=(Shutter& /*rhs*/) {assert(false); return *this;}
 };
 
 class Wheel : public CStateDeviceBase<Wheel>
@@ -108,7 +111,9 @@ private:
    std::string port_;
    unsigned curPos_;
    bool busy_;
-   long openTimeUs_;
+   MM::MMTime changedTime_;
+
+   Wheel& operator=(Wheel& /*rhs*/) {assert(false); return *this;}
 };
 
 
@@ -128,31 +133,43 @@ public:
 
    // XYStage API
    // -----------
-  int SetPositionUm(double x, double y);
-  int GetPositionUm(double& x, double& y);
   int SetPositionSteps(long x, long y);
+  int SetRelativePositionSteps(long x, long y);
   int GetPositionSteps(long& x, long& y);
   int Home();
   int Stop();
   int SetOrigin();//jizhen 4/12/2007
-  int GetLimits(double& xMin, double& xMax, double& yMin, double& yMax);
+  int GetLimitsUm(double& xMin, double& xMax, double& yMin, double& yMax);
+  int GetStepLimits(long& xMin, long& xMax, long& yMin, long& yMax);
+  double GetStepSizeXUm() {return stepSizeXUm_;}
+  double GetStepSizeYUm() {return stepSizeYUm_;}
+  int IsXYStageSequenceable(bool& isSequenceable) const {isSequenceable = false; return DEVICE_OK;}
 
    // action interface
    // ----------------
    int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnStepSizeX(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnStepSizeY(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnMaxSpeed(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnAcceleration(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnSCurve(MM::PropertyBase* pProp, MM::ActionType eAct);
 
 private:
    int GetResolution(double& resX, double& resY);
    int GetDblParameter(const char* command, double& param);
    int GetPositionStepsSingle(char axis, long& steps);
+   bool HasCommand(std::string command);
   
+   MMThreadLock lock_;
+   bool initialized_;
    std::string port_;
    double stepSizeXUm_;
    double stepSizeYUm_;
-   bool initialized_;
    double answerTimeoutMs_;
+   double originX_;
+   double originY_;
+   bool mirrorX_;
+   bool mirrorY_;
 };
 
 class ZStage : public CStageBase<ZStage>
@@ -178,18 +195,67 @@ public:
   int SetOrigin();
   int GetLimits(double& min, double& max);
 
+  int IsStageSequenceable(bool& isSequenceable) const {isSequenceable = false; return DEVICE_OK;}
+  bool IsContinuousFocusDrive() const {return false;}
+
    // action interface
    // ----------------
    int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
+
 
 private:
    int ExecuteCommand(const std::string& cmd, std::string& response);
    int Autofocus(long param);
    int GetResolution(double& res);
 
+   bool initialized_;
    std::string port_;
    double stepSizeUm_;
+   long curSteps_;
+   double answerTimeoutMs_;
+};
+
+class NanoZStage : public CStageBase<NanoZStage>
+{
+public:
+   NanoZStage();
+   ~NanoZStage();
+  
+   // Device API
+   // ----------
+   int Initialize();
+   int Shutdown();
+  
+   void GetName(char* pszName) const;
+   bool Busy();
+
+   // Stage API
+   // ---------
+  int SetPositionUm(double pos);
+  int SetRelativePositionUm(double pos);
+  int GetPositionUm(double& pos);
+  int SetPositionSteps(long steps);
+  int GetPositionSteps(long& steps);
+  int SetOrigin();
+  int GetLimits(double& min, double& max);
+
+  int IsStageSequenceable(bool& isSequenceable) const {isSequenceable = false; return DEVICE_OK;}
+  bool IsContinuousFocusDrive() const {return false;}
+
+   // action interface
+   // ----------------
+   int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnVersion(MM::PropertyBase* pProp, MM::ActionType eAct);
+
+
+private:
+   int ExecuteCommand(const std::string& cmd, std::string& response);
+   bool HasCommand(std::string command);
+   int GetModelAndVersion(std::string& model, std::string& version);
+
    bool initialized_;
+   std::string port_;
+   double stepSizeUm_;
    long curSteps_;
    double answerTimeoutMs_;
 };
@@ -218,11 +284,77 @@ public:
 private:
    int ExecuteCommand(const std::string& cmd, std::string& response);
 
-   std::string port_;
    bool initialized_;
+   std::string port_;
    double answerTimeoutMs_;
    std::string command_;
    std::string response_;
 };
 
-#endif //_LUDL_H_
+class Lumen : public CShutterBase<Lumen>
+{
+public:
+   Lumen();
+   ~Lumen();
+
+   bool Busy();
+   void GetName(char* pszName) const;
+   int Initialize();
+   int Shutdown();
+      
+   // Shutter API
+   int SetOpen(bool open = true);
+   int GetOpen(bool& open);
+   int Fire(double deltaT);
+
+   // action interface
+   // ----------------
+   int OnState(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnDelay(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnIntensity(MM::PropertyBase* pProp, MM::ActionType eAct);
+
+private:
+   int SetShutterPosition(bool state);
+   bool initialized_;
+   std:: string port_;
+   MM::MMTime changedTime_;
+   long intensity_;
+   bool curState_;
+};
+
+class TTLShutter : public CShutterBase<TTLShutter>
+{
+public:
+   TTLShutter(const char* name, int id);
+   ~TTLShutter();
+
+   bool Busy();
+   void GetName(char* pszName) const;
+   int Initialize();
+   int Shutdown();
+      
+   // Shutter API
+   int SetOpen(bool open = true);
+   int GetOpen(bool& open);
+   int Fire(double deltaT);
+
+   // action interface
+   // ----------------
+   int OnState(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnDelay(MM::PropertyBase* pProp, MM::ActionType eAct);
+
+private:
+   int SetShutterPosition(bool state);
+   int GetShutterPosition(bool& state);
+   std::string name_;
+   bool initialized_;
+   const int id_;
+   std:: string port_;
+   MM::MMTime changedTime_;
+
+   TTLShutter& operator=(TTLShutter& /*rhs*/) {assert(false); return *this;}
+};
+
+#endif //_PRIOR_H_

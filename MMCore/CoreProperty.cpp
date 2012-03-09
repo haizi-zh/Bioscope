@@ -27,7 +27,9 @@
 #include "CoreProperty.h"
 #include "MMCore.h"
 #include "Error.h"
+#include "../MMDevice/DeviceUtils.h"
 #include <assert.h>
+#include <stdlib.h>
 using namespace std;
 
 vector<string> CoreProperty::GetAllowedValues() const
@@ -76,7 +78,11 @@ void CorePropertyCollection::Set(const char* propName, const char* value)
       throw CMMError(propName, core_->getCoreErrorText(MMERR_InvalidCoreProperty).c_str(), MMERR_InvalidCoreProperty);
 
    if (!it->second.IsAllowed(value) || it->second.IsReadOnly())
-      throw CMMError(propName, core_->getCoreErrorText(MMERR_InvalidCoreValue).c_str(), MMERR_InvalidCoreValue);
+   {
+      std::stringstream msg;
+      msg << "Attempted to set \"Core-" << propName << "\" to \"" << value << "\".";
+      throw CMMError(msg.str().c_str(), core_->getCoreErrorText(MMERR_InvalidCoreValue).c_str(), MMERR_InvalidCoreValue);
+   }
 
    // execute property set command
    //
@@ -127,11 +133,36 @@ void CorePropertyCollection::Execute(const char* propName, const char* value)
    {
       core_->setXYStageDevice(value);
    }
+   else if (strcmp(propName, MM::g_Keyword_CoreAutoFocus) == 0)
+   {
+      core_->setAutoFocusDevice(value);
+   }
+   else if (strcmp(propName, MM::g_Keyword_CoreImageProcessor) == 0)
+   {
+      core_->setImageProcessorDevice(value);
+   }
+   else if (strcmp(propName, MM::g_Keyword_CoreSLM) == 0)
+   {
+      core_->setSLMDevice(value);
+   }
+   else if (strcmp(propName, MM::g_Keyword_CoreTimeoutMs) == 0)
+   {
+      core_->setTimeoutMs(atol(value));
+   }
+   else if (strcmp(propName, MM::g_Keyword_CoreChannelGroup) == 0)
+   {
+      core_->setChannelGroup(value);
+   }
    // unknown property
    else
    {
       // should never get here...
       assert(!"Unable to execute set property command.\n");
+   }
+
+   if (core_->externalCallback_)
+   {
+      core_->externalCallback_->onPropertyChanged("Core", propName, value); 
    }
 }
 
@@ -142,6 +173,15 @@ string CorePropertyCollection::Get(const char* propName) const
       throw CMMError(propName, core_->getCoreErrorText(MMERR_InvalidCoreProperty).c_str(), MMERR_InvalidCoreProperty);
 
    return it->second.Get();
+}
+
+bool CorePropertyCollection::Has(const char* propName) const
+{
+   map<string, CoreProperty>::const_iterator it = properties_.find(propName);
+   if (it == properties_.end())
+      return false; // not defined
+
+   return true;
 }
 
 vector<string> CorePropertyCollection::GetNames() const
@@ -173,6 +213,22 @@ void CorePropertyCollection::Refresh()
 
    // XYStage
    Set(MM::g_Keyword_CoreXYStage, core_->getXYStageDevice().c_str());
+
+   // Auto-Focus
+   Set(MM::g_Keyword_CoreAutoFocus, core_->getAutoFocusDevice().c_str());
+
+   // Image processor
+   Set(MM::g_Keyword_CoreImageProcessor, core_->getImageProcessorDevice().c_str());
+
+   // SLM
+   Set(MM::g_Keyword_CoreSLM, core_->getSLMDevice().c_str());
+
+   // Timeout for Device Busy checking
+   Set(MM::g_Keyword_CoreTimeoutMs, CDeviceUtils::ConvertToString(core_->getTimeoutMs()));
+
+   // Channel group
+   Set(MM::g_Keyword_CoreChannelGroup, core_->getChannelGroup().c_str());
+
 }
 
 bool CorePropertyCollection::IsReadOnly(const char* propName) const

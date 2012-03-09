@@ -21,21 +21,26 @@
 //
 // CVS:          $Id$
 //
-
 package org.micromanager.conf;
 
-import java.awt.Color;
+import java.awt.Container;
+import java.awt.Cursor;
+import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.prefs.Preferences;
 
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.border.LineBorder;
+import org.micromanager.MMStudioMainFrame;
+import org.micromanager.utils.FileDialogs;
+
+import org.micromanager.utils.GUIUtils;
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * The last wizard page.
@@ -43,106 +48,165 @@ import javax.swing.border.LineBorder;
  */
 public class FinishPage extends PagePanel {
 
-   private JTextArea logArea_;
-   private JButton browseButton_;
-   private JTextField fileNameField_;
-   /**
-    * Create the panel
-    */
-   public FinishPage(Preferences prefs) {
-      super();
-      title_ = "Test configuration, save and exit";
-      setHelpFileName("conf_finish_page.html");
-      prefs_ = prefs;
-      setLayout(null);
+    private static final long serialVersionUID = 1L;
 
-      final JLabel configurationWillBeLabel = new JLabel();
-      configurationWillBeLabel.setText("Configuration file:");
-      configurationWillBeLabel.setBounds(14, 11, 93, 21);
-      add(configurationWillBeLabel);
+    private JButton browseButton_;
+    private JTextField fileNameField_;
+    private boolean overwrite_ = false;
+    JCheckBox sendCheck_;
 
-      fileNameField_ = new JTextField();
-      fileNameField_.setBounds(12, 30, 429, 24);
-      add(fileNameField_);
+    /**
+     * Create the panel
+     */
+    public FinishPage(Preferences prefs) {
+        super();
+        title_ = "Save configuration and exit";
+        setHelpFileName("conf_finish_page.html");
+        prefs_ = prefs;
+        setLayout(null);
 
-      browseButton_ = new JButton();
-      browseButton_.addActionListener(new ActionListener() {
-         public void actionPerformed(final ActionEvent e) {
-         }
-      });
-      browseButton_.setText("Browse...");
-      browseButton_.setBounds(443, 31, 48, 23);
-      add(browseButton_);
+        final JLabel configurationWillBeLabel = new JLabel();
+        configurationWillBeLabel.setText("Configuration file:");
+        configurationWillBeLabel.setBounds(14, 11, 123, 21);
+        add(configurationWillBeLabel);
 
-      final JButton saveAndTestButton = new JButton();
-      saveAndTestButton.addActionListener(new ActionListener() {
-         public void actionPerformed(final ActionEvent e) {
-            saveAndTest();
-         }
-      });
-      saveAndTestButton.setText("Save and test the new configuration");
-      saveAndTestButton.setBounds(136, 69, 227, 30);
-      add(saveAndTestButton);
+        fileNameField_ = new JTextField();
+        fileNameField_.setBounds(12, 30, 429, 24);
+        add(fileNameField_);
 
-      logArea_ = new JTextArea();
-      logArea_.setLineWrap(true);
-      logArea_.setWrapStyleWord(true);
-      logArea_.setBorder(new LineBorder(Color.black, 1, false));
-      logArea_.setBounds(10, 136, 480, 127);
-      add(logArea_);
-      //
-   }
+        browseButton_ = new JButton();
+        browseButton_.addActionListener(new ActionListener() {
 
-   public boolean enterPage(boolean next) {
-      fileNameField_.setText(model_.getFileName());
-      return true;
-  }
-
-   public boolean exitPage(boolean next) {
-      // TODO Auto-generated method stub
-      return true;
-   }
-   
-   public void refresh() {
-   }
-
-   public void loadSettings() {
-      // TODO Auto-generated method stub
-      
-   }
-
-   public void saveSettings() {
-      // TODO Auto-generated method stub
-      
-   }
-   
-   private void saveAndTest() {
-      try {
-         core_.unloadAllDevices();
-         File f = new File(fileNameField_.getText());
-         if( f.exists() ) { 
-            int sel = JOptionPane.showConfirmDialog(this,
-                     "Overwrite " + f.getName(),
-                     "File Save",
-                     JOptionPane.YES_NO_OPTION);
-            if (sel == JOptionPane.NO_OPTION) {
-               logArea_.setText("File must be saved in order to test the configuration!");
-               return;
+            public void actionPerformed(final ActionEvent e) {
+                browseConfigurationFile();
             }
-         }
-         fileNameField_.setText(f.getAbsolutePath());
-         model_.removeInvalidConfigurations();
-         model_.saveToFile(fileNameField_.getText());
-         core_.loadSystemConfiguration(model_.getFileName());
-      } catch (MMConfigFileException e) {
-         // TODO Auto-generated catch block
-         e.printStackTrace();
-      } catch (Exception e) {
-         logArea_.setText(e.getMessage());
-         return;
-      }
-      
-      logArea_.setText("Success!");
-   }
+        });
+        browseButton_.setText("Browse...");
+        browseButton_.setBounds(443, 31, 100, 23);
+        add(browseButton_);
+/*
+        final JButton saveAndTestButton = new JButton();
+        saveAndTestButton.addActionListener(new ActionListener() {
 
+            public void actionPerformed(final ActionEvent e) {
+                saveAndTest();
+            }
+        });
+        saveAndTestButton.setText("Save and test the new configuration");
+        saveAndTestButton.setBounds(96, 59, 277, 30);
+        add(saveAndTestButton);
+
+ */
+
+      
+
+        sendCheck_ = new JCheckBox();
+        sendCheck_.setBounds(10, 100, 360, 33);
+        sendCheck_.setFont(new Font("", Font.PLAIN, 12));
+        sendCheck_.addActionListener(new ActionListener() {
+
+            public void actionPerformed(ActionEvent arg0) {
+              model_.setSendConfiguration(sendCheck_.isSelected());
+            }
+        });
+
+        sendCheck_.setText("Send configuration to Micro-manager.org");
+        add(sendCheck_);
+
+        final JLabel sendConfigExplain = new JLabel();
+        sendConfigExplain.setAutoscrolls(true);
+        sendConfigExplain.setText("Providing the configuration data will assist securing further project funding.");
+        sendConfigExplain.setBounds(10, 150, 500, 33);
+        sendConfigExplain.setFont(sendCheck_.getFont());
+        add(sendConfigExplain);
+        
+
+
+
+        //
+    }
+
+    public boolean enterPage(boolean next) {
+        sendCheck_.setSelected(model_.getSendConfiguration());
+        fileNameField_.setText(model_.getFileName());
+        return true;
+    }
+
+
+    public boolean exitPage(boolean toNext) {
+        if( toNext)
+            saveAndTest();
+        
+        return true;
+    }
+
+    public void refresh() {
+    }
+
+    public void loadSettings() {
+        // TODO Auto-generated method stub
+    }
+
+    public void saveSettings() {
+        // TODO Auto-generated method stub
+    }
+
+    private void browseConfigurationFile() {
+        String suffixes[] = {".cfg"};
+        File f = FileDialogs.save(this.parent_,
+                "Select a configuration file name",
+                MMStudioMainFrame.MM_CONFIG_FILE);
+        if (f != null) {
+            setFilePath(f);
+            overwrite_ = true;
+        }
+    }
+
+    private void setFilePath(File f) {
+        String absolutePath = f.getAbsolutePath();
+        if (!absolutePath.endsWith(".cfg")) {
+            absolutePath += ".cfg";
+        }
+        fileNameField_.setText(absolutePath);
+    }
+
+    private void saveAndTest() {
+         Container ancestor = getTopLevelAncestor();
+         Cursor oldc = null;
+         if (null != ancestor){
+            oldc = ancestor.getCursor();
+            Cursor waitc = new Cursor(Cursor.WAIT_CURSOR);
+            ancestor.setCursor(waitc);
+         }
+        try {
+            core_.unloadAllDevices();
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+
+            File f = new File(fileNameField_.getText());
+            if (f.exists() && !overwrite_) {
+                int sel = JOptionPane.showConfirmDialog(this,
+                        "Overwrite " + f.getName() + "?",
+                        "File Save",
+                        JOptionPane.YES_NO_OPTION);
+                if (sel == JOptionPane.NO_OPTION) {
+                    ReportingUtils.logMessage("H.W. Configuration problem: File must be saved in order to test the configuration!");
+                    return;
+                }
+            }
+            setFilePath(f);
+            model_.removeInvalidConfigurations();
+            model_.saveToFile(fileNameField_.getText());
+            core_.loadSystemConfiguration(model_.getFileName());
+            GUIUtils.preventDisplayAdapterChangeExceptions();
+        } catch (MMConfigFileException e) {
+            ReportingUtils.showError(e);
+        } catch (Exception e) {
+            ReportingUtils.showError(e);
+        } finally{
+            if (null != ancestor){
+               if( null != oldc)
+                  ancestor.setCursor(oldc);
+            }
+        }
+    }
 }

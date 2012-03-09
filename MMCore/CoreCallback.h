@@ -25,15 +25,15 @@
 // CVS:           $Id$
 //
 
-#include <ace/OS.h>
-#include <ace/High_Res_Timer.h>
-#include <ace/Log_Msg.h>
-#ifdef __APPLE__
-#include <sys/time.h>
-#endif
+#ifndef _CORECALLBACK_H_
+#define _CORECALLBACK_H_
 
+#include "IMMLogger.h"
 #include "CoreUtils.h"
 #include "MMCore.h"
+#include "MMEventCallback.h"
+#include "../MMDevice/DeviceUtils.h"
+
 
 using namespace std;
 
@@ -44,13 +44,20 @@ using namespace std;
 class CoreCallback : public MM::Core
 {
 public:
-   CoreCallback(CMMCore* c) : core_(c) {}
-   ~CoreCallback() {}
+   CoreCallback(CMMCore* c) : core_(c), pValueChangeLock_(NULL) 
+   {
+      assert(core_);
+      pValueChangeLock_ = new MMThreadLock();
+   }
+   ~CoreCallback() { delete pValueChangeLock_; }
+
+   int GetDeviceProperty(const char* deviceName, const char* propName, char* value);
+   int SetDeviceProperty(const char* deviceName, const char* propName, const char* value);
 
    /**
     * Writes a message to the Micro-Manager log file.
     */
-   int LogMessage(const MM::Device* caller, const char* msg, bool debugOnly)
+   int LogMessage(const MM::Device* caller, const char* msg, bool debugOnly) const
    {
       char label[MM::MaxStrLength];
       caller->GetLabel(label);
@@ -89,165 +96,204 @@ public:
       return pDev;
    }
    
-   /**
-    * Sends an array of bytes to the port.
-    */
-   int WriteToSerial(const MM::Device* caller, const char* portName, const char* buf, unsigned long length)
+   MM::PortType GetSerialPortType(const char* portName) const
    {
       MM::Serial* pSerial = 0;
       try
       {
          pSerial = core_->getSpecificDevice<MM::Serial>(portName);
       }
-      catch (CMMError& err)
-      {
-         return err.getCode();    
-      }
       catch (...)
       {
-         return DEVICE_SERIAL_COMMAND_FAILED;
+         return MM::InvalidPort;
       }
 
-      // don't allow self reference
-      if (dynamic_cast<MM::Device*>(pSerial) == caller)
-         return DEVICE_SELF_REFERENCE;
-
-      return pSerial->Write(buf, length);
+      return pSerial->GetPortType();
    }
-   
-   /**
-    * Reads bytes form the port, up to the buffer length.
-    */
-   int ReadFromSerial(const MM::Device* caller, const char* portName, char* buf, unsigned long bufLength, unsigned long &bytesRead)
-   {
-      MM::Serial* pSerial = 0;
-      try
-      {
-         pSerial = core_->getSpecificDevice<MM::Serial>(portName);
-      }
-      catch (CMMError& err)
-      {
-         return err.getCode();    
-      }
-      catch (...)
-      {
-         return DEVICE_SERIAL_COMMAND_FAILED;
-      }
+ 
+   int SetSerialProperties(const char* portName,
+                           const char* answerTimeout,
+                           const char* baudRate,
+                           const char* delayBetweenCharsMs,
+                           const char* handshaking,
+                           const char* parity,
+                           const char* stopBits);
 
-      // don't allow self reference
-      if (dynamic_cast<MM::Device*>(pSerial) == caller)
-         return DEVICE_SELF_REFERENCE;
+   int WriteToSerial(const MM::Device* caller, const char* portName, const unsigned char* buf, unsigned long length);
+   int ReadFromSerial(const MM::Device* caller, const char* portName, unsigned char* buf, unsigned long bufLength, unsigned long &bytesRead);
+   int PurgeSerial(const MM::Device* caller, const char* portName);
+   int SetSerialCommand(const MM::Device*, const char* portName, const char* command, const char* term);
+   int GetSerialAnswer(const MM::Device*, const char* portName, unsigned long ansLength, char* answerTxt, const char* term);
 
-      return pSerial->Read(buf, bufLength, bytesRead);
-   }
+	unsigned long GetClockTicksUs(const MM::Device* /*caller*/);
 
-   /**
-    * Clears port buffers.
-    */
-   int PurgeSerial(const MM::Device* caller, const char* portName)
-   {
-      MM::Serial* pSerial = 0;
-      try
-      {
-         pSerial = core_->getSpecificDevice<MM::Serial>(portName);
-      }
-      catch (CMMError& err)
-      {
-         return err.getCode();    
-      }
-      catch (...)
-      {
-         return DEVICE_SERIAL_COMMAND_FAILED;
-      }
-
-      // don't allow self reference
-      if (dynamic_cast<MM::Device*>(pSerial) == caller)
-         return DEVICE_SELF_REFERENCE;
-
-      return pSerial->Purge();
-   }
-
-   /**
-    * Sends an ASCII command terminated by the specified character sequence.
-    */
-   int SetSerialCommand(const MM::Device*, const char* portName, const char* command, const char* term)
-   {
-      assert(core_);
-      try {
-         core_->setSerialPortCommand(portName, command, term);
-      }
-      catch (...)
-      {
-         // trap all exceptions and return generic serial error
-         return DEVICE_SERIAL_COMMAND_FAILED;
-      }
-      return DEVICE_OK;
-   }
-   
-   /**
-    * Receives an ASCII string terminated by the specified character sequence.
-    * The terminator string is stripped of the answer. If the termination code is not
-    * received within the com port timeout and error will be flagged.
-    */
-   int GetSerialAnswer(const MM::Device*, const char* portName, unsigned long ansLength, char* answerTxt, const char* term)
-   {
-      assert(core_);
-      string answer;
-      try {
-         answer = core_->getSerialPortAnswer(portName, term);
-         if (answer.length() >= ansLength)
-            return DEVICE_SERIAL_BUFFER_OVERRUN;
-      }
-      catch (...)
-      {
-         // trap all exceptions and return generic serial error
-         return DEVICE_SERIAL_COMMAND_FAILED;
-      }
-      strcpy(answerTxt, answer.c_str());
-      return DEVICE_OK;
-   }
-
-   /**
-    * Handler for the status change event from the device.
-    */
-   int OnStatusChanged(const MM::Device* /* caller */)
-   {
-      return DEVICE_OK;
-   }
-   
-   /**
-    * Handler for the operation finished event from the device.
-    */
-   int OnFinished(const MM::Device* /* caller */)
-   {
-      return DEVICE_OK;
-   }
-
-   // to work around a bug in ACE implementation on Mac:
-#ifdef __APPLE__
-   long GetClockTicksUs(const MM::Device* /*caller*/)
-   {
-      struct timeval t;
-      gettimeofday(&t,NULL);
-      return t.tv_sec * 1000000L + t.tv_usec;
-   }
-#else
-   long GetClockTicksUs(const MM::Device* /*caller*/)
-   {
-      ACE_High_Res_Timer timer;
-      ACE_Time_Value t = timer.gettimeofday();
-      return t.sec() * 1000000L + t.usec();
-   }
-#endif
+	// MMTime, in epoch beginning at 2000 01 01
+   MM::MMTime GetCurrentMMTime();
 
    void Sleep (const MM::Device* /*caller*/, double intervalMs)
    {
-      ACE_Time_Value tv(0, (long)intervalMs * 1000);
-      ACE_OS::sleep(tv);
+		CDeviceUtils::SleepMs((long)(0.5+ intervalMs));
+   }
+
+   // continous acquisition support
+   int InsertImage(const MM::Device* caller, const ImgBuffer& imgBuf);
+   int InsertImage(const MM::Device* caller, const unsigned char* buf, unsigned width, unsigned height, unsigned byteDepth, const char* serializedMetadata, const bool doProcess = true);
+
+   /*Deprecated*/ int InsertImage(const MM::Device* caller, const unsigned char* buf, unsigned width, unsigned height, unsigned byteDepth, const Metadata* pMd = 0, const bool doProcess = true);
+
+   int InsertMultiChannel(const MM::Device* caller, const unsigned char* buf, unsigned numChannels, unsigned width, unsigned height, unsigned byteDepth, Metadata* pMd = 0);
+   void SetAcqStatus(const MM::Device* caller, int statusCode);
+   void ClearImageBuffer(const MM::Device* caller);
+   bool InitializeImageBuffer(unsigned channels, unsigned slices, unsigned int w, unsigned int h, unsigned int pixDepth);
+   long getImageBufferTotalFrames() {return core_->getBufferTotalCapacity();}
+   long getImageBufferFreeFrames() {return core_->getBufferFreeCapacity();}
+
+   int OpenFrame(const MM::Device* caller);
+   int CloseFrame(const MM::Device* caller);
+   int AcqFinished(const MM::Device* caller, int statusCode);
+   int PrepareForAcq(const MM::Device* caller);
+
+   // autofocus support
+   const char* GetImage();
+   int GetImageDimensions(int& width, int& height, int& depth);
+   int GetFocusPosition(double& pos);
+   int SetFocusPosition(double pos);
+   int MoveFocus(double v);
+   int SetXYPosition(double x, double y);
+   int GetXYPosition(double& x, double& y);
+   int MoveXYStage(double vX, double vY);
+   int SetExposure(double expMs);
+   int GetExposure(double& expMs);
+   int SetConfig(const char* group, const char* name);
+   int GetCurrentConfig(const char* group, int bufLen, char* name);
+   int GetChannelConfig(char* channelConfigName, const unsigned int channelConfigIterator);
+
+   // notification handlers
+   int OnStatusChanged(const MM::Device* /* caller */);
+   int OnPropertiesChanged(const MM::Device* /* caller */);
+   int OnPropertyChanged(const MM::Device* device, const char* propName, const char* value);
+   int OnConfigGroupChanged(const char* groupName, const char* newConfigName);
+   int OnPixelSizeChanged(double newPixelSizeUm);
+   int OnStagePositionChanged(const MM::Device* device, double pos);
+   int OnXYStagePositionChanged(const MM::Device* device, double xpos, double ypos);
+   int OnFinished(const MM::Device* /* caller */);
+
+
+   void NextPostedError(int& /*errorCode*/, char* /*pMessage*/, int /*maxlen*/, int& /*messageLength*/);
+   void PostError(const  int, const char*);
+   void ClearPostedErrors( void);
+
+
+   // device management
+   MM::ImageProcessor* GetImageProcessor(const MM::Device* /* caller */)
+   {
+      return core_->imageProcessor_;
+   }
+
+   MM::State* GetStateDevice(const MM::Device* /* caller */, const char* deviceName)
+   {
+      try {
+         return core_->getSpecificDevice<MM::State>(deviceName);
+      } catch(...) {
+         //trap all exceptions
+         return 0;
+      }
+   }
+
+   MM::SignalIO* GetSignalIODevice(const MM::Device* /* caller */, const char* deviceName)
+   {
+      try {
+         return core_->getSpecificDevice<MM::SignalIO>(deviceName);
+      } catch(...) {
+         //trap all exceptions
+         return 0;
+      }
+   }
+
+   MM::AutoFocus* GetAutoFocus(const MM::Device* /* caller */)
+   {
+      try {
+         return core_->autoFocus_;
+      } catch(...) {
+         //trap all exceptions
+         return 0;
+      }
+   }
+
+   MM::Hub* GetParentHub(const MM::Device* caller) const
+   {
+      if (caller == 0)
+         return 0;
+
+      return core_->pluginManager_.GetParentDevice(*caller);
+   }
+
+   MM::Device* GetPeripheral(const MM::Device* caller, unsigned idx) const
+   {
+      std::vector<MM::Device*> peripherals;
+      char hubLabel[MM::MaxStrLength];
+      caller->GetLabel(hubLabel);
+      std::vector<std::string> peripheralLabels = core_->pluginManager_.GetLoadedPeripherals(hubLabel);
+      try
+      {
+         if (idx < peripheralLabels.size())
+            return core_->pluginManager_.GetDevice(peripheralLabels[idx].c_str());
+         else
+            return 0;
+      }
+      catch(...)
+      {
+         // this should not happen
+         assert(false);
+         return 0;
+      }
+   }
+
+   unsigned GetNumberOfPeripherals(const MM::Device* caller)
+   {
+      char hubLabel[MM::MaxStrLength];
+      caller->GetLabel(hubLabel);
+      return (unsigned) core_->pluginManager_.GetLoadedPeripherals(hubLabel).size();
    }
 
 
+   void GetLoadedDeviceOfType(const MM::Device* /* caller */, MM::DeviceType devType,  char* deviceName, const unsigned int deviceIterator)
+   {
+      deviceName[0] = 0;
+      std::vector<std::string> v = core_->getLoadedDevicesOfType(devType);
+      if( deviceIterator < v.size())
+         strncpy( deviceName, v.at(deviceIterator).c_str(), MM::MaxStrLength);
+      return;
+   }
+//#if 0
+   // device discovery  -- todo do we need this on the callback??
+   MM::DeviceDetectionStatus DetectDevice(const MM::Device* /*pCaller*/, char* deviceName)
+   {
+      MM::DeviceDetectionStatus result = MM::Unimplemented; 
+      try
+      {
+         if( NULL != deviceName)
+         {
+            if( 0 < strlen(deviceName))
+            {
+
+               result = core_->detectDevice(deviceName);
+            }
+         }
+      }
+      catch (...)
+      {
+         // trap all exceptions
+      }
+
+      return result;
+   }
+//
+
 private:
    CMMCore* core_;
+   MMThreadLock* pValueChangeLock_;
+
 };
 
+#endif // _CORECALLBACK_H_

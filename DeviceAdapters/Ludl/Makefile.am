@@ -1,11 +1,8 @@
-AM_CXXFLAGS = -fpermissive
-lib_LTLIBRARIES = Ludl.la
-Ludl_la_SOURCES = Ludl.cpp Ludl.h
-## adding the libtool library gives problems on OS X 10.4, adding the static lib works
-Ludl_la_LIBADD = ../../MMDevice/.libs/libMMDevice.a 
-Ludl_la_LDFLAGS = -module
+pkglibdir = $(DEVICEADAPTERPATH)
+AM_CXXFLAGS = $(MMDEVAPI_CXXFLAGS) -fpermissive
+pkglib_LTLIBRARIES = libmmgr_dal_Ludl.la
+libmmgr_dal_Ludl_la_SOURCES = Ludl.cpp Ludl.h
+libmmgr_dal_Ludl_la_LIBADD = $(MMDEVAPI_LIBADD)
+libmmgr_dal_Ludl_la_LDFLAGS = $(MMDEVAPI_LDFLAGS)
 
-install:
-	cp .libs/Ludl.so $(IJPATH)/$(MMPREFIX)Ludl
-
-EXTRA_DIST = Ludl.vcproj license.txt
+EXTRA_DIST = license.txt

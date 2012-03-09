@@ -21,7 +21,8 @@
 //
 
 const int BUFSIZE = 60;
-
+#include <assert.h>
+#include <cstdio>
 #include "Property.h"
 using namespace std;
 
@@ -41,12 +42,14 @@ vector<string> MM::Property::GetAllowedValues() const
 void MM::Property::AddAllowedValue(const char* value)
 {
    values_.insert(make_pair<string, long>(value, 0L));
+   limits_ = false;
 }
 
 void MM::Property::AddAllowedValue(const char* value, long data)
 {
    values_.insert(make_pair<string, long>(value, data));
    hasData_ = true;
+   limits_ = false;
 }
 
 
@@ -77,7 +80,13 @@ bool MM::Property::GetData(const char* value, long& data) const
    }
 }
 
- MM::Property& MM::Property::operator=(const MM::Property& rhs)
+void MM::Property::SetSequenceable(long sequenceMaxSize)
+{
+   sequenceable_ = (sequenceMaxSize != 0);
+   sequenceMaxSize_ = sequenceMaxSize;
+}
+
+MM::Property& MM::Property::operator=(const MM::Property& rhs)
  {
     readOnly_ = rhs.readOnly_;
     values_ = rhs.values_;
@@ -158,22 +167,35 @@ MM::Property* MM::StringProperty::Clone() const
 // ~~~~~~~~~~~~~~~~
 //
 
+double MM::FloatProperty::Truncate(double dVal)
+{
+   char fmtStr[20];
+   char buf[BUFSIZE];
+   sprintf(fmtStr, "%%.%df", decimalPlaces_);
+   snprintf(buf, BUFSIZE, fmtStr, dVal);
+   return atof(buf);
+}
+
 bool MM::FloatProperty::Set(double dVal)
 {
-   value_ = dVal;
+   double val = Truncate(dVal);
+   if (limits_)
+   {
+      if (val < lowerLimit_ || val > upperLimit_)
+         return false;
+   }
+   value_ = val;
    return true;
 }
 
 bool MM::FloatProperty::Set(long lVal)
 {
-   value_ = (double)lVal;
-   return true;
+   return Set((double)lVal);
 }
 
 bool MM::FloatProperty::Set(const char* pszVal)
 {
-   value_ = atof(pszVal);
-   return true;
+   return Set(atof(pszVal));
 }
 
 bool MM::FloatProperty::Get(double& dVal) const
@@ -190,9 +212,11 @@ bool MM::FloatProperty::Get(long& lVal) const
 
 bool MM::FloatProperty::Get(std::string& strVal) const
 {
-   char pszBuf[BUFSIZE];
-   snprintf(pszBuf, BUFSIZE, "%.2f", value_); 
-   strVal = pszBuf;
+   char fmtStr[20];
+   char buf[BUFSIZE];
+   sprintf(fmtStr, "%%.%df", decimalPlaces_);
+   snprintf(buf, BUFSIZE, fmtStr, value_);
+   strVal = buf;
    return true;
 }
 
@@ -220,20 +244,23 @@ MM::Property* MM::FloatProperty::Clone() const
 
 bool MM::IntegerProperty::Set(double dVal)
 {
-   value_ = (long)dVal;
-   return true;
+   return Set((long)dVal);
 }
 
 bool MM::IntegerProperty::Set(long lVal)
 {
+   if (limits_)
+   {
+      if (lVal < lowerLimit_ || lVal > upperLimit_)
+         return false;
+   }
    value_ = lVal;
    return true;
 }
 
 bool MM::IntegerProperty::Set(const char* pszVal)
 {
-   value_ = atol(pszVal);
-   return true;
+   return Set(atol(pszVal));
 }
 
 bool MM::IntegerProperty::Get(double& dVal) const
@@ -301,7 +328,10 @@ int MM::PropertyCollection::Set(const char* pszPropName, const char* pszValue)
 
    if (pProp->IsAllowed(pszValue))
    {
-      pProp->Set(pszValue);
+      // check property limits
+      if (!pProp->Set(pszValue))
+         return DEVICE_INVALID_PROPERTY_VALUE;
+
       return pProp->Apply();
    }
    else
@@ -396,6 +426,16 @@ int MM::PropertyCollection::SetAllowedValues(const char* pszName, vector<string>
    for (unsigned i=0; i<values.size(); i++)
       pProp->AddAllowedValue(values[i].c_str());
 
+   return DEVICE_OK;
+}
+
+int MM::PropertyCollection::ClearAllowedValues(const char* pszName)
+{
+   MM::Property* pProp = Find(pszName);
+   if (!pProp)
+      return DEVICE_INVALID_PROPERTY; // name not found
+
+   pProp->ClearAllowedValues();
    return DEVICE_OK;
 }
 

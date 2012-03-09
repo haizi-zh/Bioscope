@@ -1,11 +1,8 @@
-AM_CXXFLAGS = -fpermissive
-lib_LTLIBRARIES = Prior.la
-Prior_la_SOURCES = Prior.cpp prior.h
-## adding the libtool library gives problems on OS X 10.4, adding the static lib works
-Prior_la_LIBADD = ../../MMDevice/.libs/libMMDevice.a 
-Prior_la_LDFLAGS = -module
-
-install:
-	cp .libs/Prior.so $(IJPATH)/$(MMPREFIX)Prior
+pkglibdir = $(DEVICEADAPTERPATH)
+AM_CXXFLAGS = $(MMDEVAPI_CXXFLAGS) -fpermissive
+pkglib_LTLIBRARIES = libmmgr_dal_Prior.la
+libmmgr_dal_Prior_la_SOURCES = Prior.cpp prior.h
+libmmgr_dal_Prior_la_LIBADD = $(MMDEVAPI_LIBADD)
+libmmgr_dal_Prior_la_LDFLAGS = $(MMDEVAPI_LDFLAGS)
 
 EXTRA_DIST = Prior.vcproj license.txt

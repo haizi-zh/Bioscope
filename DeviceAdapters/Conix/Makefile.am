@@ -1,9 +1,6 @@
-AM_CXXFLAGS = -fpermissive
-lib_LTLIBRARIES = Conix.la
-Conix_la_SOURCES = Conix.cpp Conix.h
-## adding the libtool library gives problems on OS X 10.4, adding the static lib works
-Conix_la_LIBADD = ../../MMDevice/.libs/libMMDevice.a
-Conix_la_LDFLAGS = -module
-
-install:
-	cp .libs/Conix.so $(IJPATH)/$(MMPREFIX)Conix
+pkglibdir = $(DEVICEADAPTERPATH)
+AM_CXXFLAGS = $(MMDEVAPI_CXXFLAGS) -fpermissive
+pkglib_LTLIBRARIES = libmmgr_dal_Conix.la
+libmmgr_dal_Conix_la_SOURCES = Conix.cpp Conix.h
+libmmgr_dal_Conix_la_LIBADD = $(MMDEVAPI_LIBADD)
+libmmgr_dal_Conix_la_LDFLAGS = $(MMDEVAPI_LDFLAGS)

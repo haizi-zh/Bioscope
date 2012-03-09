@@ -30,6 +30,15 @@
 typedef std::pair<std::string, std::string> DeviceInfo; 
 std::vector<DeviceInfo> g_availableDevices;
 
+int FindDeviceIndex(const char* deviceName)
+{
+   for (unsigned i=0; i<g_availableDevices.size(); i++)
+      if (g_availableDevices[i].first.compare(deviceName) == 0)
+         return i;
+
+   return -1;
+}
+
 MODULE_API long GetModuleVersion()
 {
    return MODULE_INTERFACE_VERSION;   
@@ -38,17 +47,6 @@ MODULE_API long GetModuleVersion()
 MODULE_API long GetDeviceInterfaceVersion()
 {
    return DEVICE_INTERFACE_VERSION;   
-}
-
-void AddAvailableDeviceName(const char* name, const char* descr)
-{
-   std::vector<DeviceInfo>::const_iterator it;
-   for (it=g_availableDevices.begin(); it!=g_availableDevices.end(); ++it)
-      if (it->first.compare(name) == 0)
-         return; // already there
-
-   // add to the list
-   g_availableDevices.push_back(std::make_pair(name, descr));   
 }
 
 MODULE_API unsigned GetNumberOfDevices()
@@ -68,11 +66,32 @@ MODULE_API bool GetDeviceName(unsigned deviceIndex, char* name, unsigned bufLen)
    return true;
 }
 
-MODULE_API bool GetDeviceDescription(unsigned deviceIndex, char* description, unsigned bufLen)
+MODULE_API bool GetDeviceDescription(const char* deviceName, char* description, unsigned bufLen)
 {
-   if (deviceIndex >= g_availableDevices.size())
-      return false;
-   
-   strncpy(description, g_availableDevices[deviceIndex].second.c_str(), bufLen-1);
+   int idx = FindDeviceIndex(deviceName);
+   if (idx < 0)
+      return false; // device name not found
+   else
+      strncpy(description, g_availableDevices[idx].second.c_str(), bufLen-1);
+
    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Functions for internal use (inside the Module)
+//
+void AddAvailableDeviceName(const char* name, const char* descr)
+{
+   std::vector<DeviceInfo>::const_iterator it;
+   for (it=g_availableDevices.begin(); it!=g_availableDevices.end(); ++it)
+      if (it->first.compare(name) == 0)
+         return; // already there
+
+   // add to the list
+   g_availableDevices.push_back(std::make_pair(name, descr));   
+}
+
+unsigned GetNumberOfDevicesInternal()
+{
+   return (unsigned) g_availableDevices.size();
 }

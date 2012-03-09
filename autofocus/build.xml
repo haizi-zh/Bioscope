@@ -1,0 +1,86 @@
+<!-- Ant makefile for the Micro-Manager Autofocus plugin  -->
+<!-- This file assumes Micro-Manager project tree structure -->
+
+<project name="Autofocus" default="build">
+
+	<!-- Specify the system path to the ImageJ root directory -->
+	<property name="InstallRoot" value="../Install_AllPlatforms/micro-manager"/>
+
+	<!-- Do not modify from this point on -->
+	<property name="IJ" value="../../3rdpartypublic/classext/ij.jar"/>
+	<property name="beanshell" value="../../3rdpartypublic/classext/bsh-2.0b4.jar"/>
+	<property name="commonsmath" value="../../3rdpartypublic/classext/commons-math-2.0.jar"/>
+          <property name="MMCoreJ" value="../bin_Win32/MMCoreJ.jar"/>
+	<property name="mmautofocus-inst" value="${InstallRoot}/mmautofocus"/>
+	<property name="Runtime" value="../bin_Win32"/>
+
+	<path id="project.class.path">
+		<pathelement location="${IJ}" />
+		<pathelement location="${beanshell}" />
+		<pathelement location="${MMCoreJ}" />
+		<pathelement location="${commonsmath}" />
+	   <pathelement location="../mmstudio/MMJ_.jar"/>
+	</path>
+
+	<target name="compile" description="Compile MM Autofocus plugins.">
+		<mkdir dir="build" />
+		<mkdir dir="buildTB" />
+		<mkdir dir="buildDuo" />
+		<mkdir dir="buildOughta" />
+		<javac srcdir="."  destdir="./build" optimize="on" source="1.5" target="1.5" debug="off">
+			<include name="*.java"/>
+			<exclude name="*TB*.java"/>
+			<exclude name="*Duo*.java"/>
+			<classpath refid="project.class.path" />
+		</javac>
+		<javac srcdir="."  destdir="./buildTB" optimize="on" source="1.5" target="1.5" debug="off">
+			<include name="*TB*.java"/>
+			<exclude name="Autofocus.java"/>
+			<classpath refid="project.class.path" />
+		</javac>
+		<javac srcdir="."  destdir="./buildDuo" optimize="on" source="1.5" target="1.5" debug="off">
+			<include name="*Duo*.java"/>
+			<classpath refid="project.class.path" />
+		</javac>
+		<javac srcdir="."  destdir="./buildOughta" optimize="on" source="1.5" target="1.5" debug="off">
+			<include name="*OughtaFocus*.java"/>
+			<classpath refid="project.class.path" />
+		</javac>
+	</target>
+
+	<target name="build" description="Build MMAutofocus.jar">
+
+		<jar jarfile="MMAutofocus.jar" basedir="build" />
+	
+		<copy file="MMAutofocus.jar" todir="${Runtime}" />
+		<copy file="MMAutofocus.jar" todir="${mmautofocus-inst}/" />
+
+		<jar jarfile="MMAutofocusTB.jar" basedir="buildTB" />
+		
+		<copy file="MMAutofocusTB.jar" todir="${Runtime}" />
+		<copy file="MMAutofocusTB.jar" todir="${mmautofocus-inst}/" />
+	
+		<jar jarfile="MMAutofocusDuo.jar" basedir="buildDuo" />
+		
+		<copy file="MMAutofocusDuo.jar" todir="${Runtime}" />
+		<copy file="MMAutofocusDuo.jar" todir="${mmautofocus-inst}/" />
+
+		<jar jarfile="MMOughtaFocus.jar" basedir="buildOughta" />
+		
+		<copy file="MMOughtaFocus.jar" todir="${Runtime}" />
+		<copy file="MMOughtaFocus.jar" todir="${mmautofocus-inst}/" />
+	</target>
+	
+	<target name="clean" description="Delete the MMAutofocus build files.">
+		<delete dir="build" />
+		<delete file="MMAutofocus.jar" />
+		<delete dir="buildTB" />
+		<delete file="MMAutofocusTB.jar" />
+		<delete dir="buildDuo" />
+		<delete file="MMAutofocusDuo.jar" />
+		<delete dir="buildOughta" />
+		<delete file="MMOughtaFocus.jar" />
+
+	</target>
+	
+</project>

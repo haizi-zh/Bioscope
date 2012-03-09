@@ -23,6 +23,8 @@
 //
 package org.micromanager.conf;
 
+import java.awt.Container;
+import java.awt.Cursor;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.prefs.Preferences;
@@ -34,15 +36,20 @@ import javax.swing.ListSelectionModel;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.TableModel;
 
+import mmcorej.CMMCore;
 import mmcorej.MMCoreJ;
-import mmcorej.StrVector;
+
+import org.micromanager.utils.ReportingUtils;
 
 /**
  * Wizard page to add or remove devices.
  */
 public class DevicesPage extends PagePanel {
+   private static final long serialVersionUID = 1L;
 
    class DeviceTable_TableModel extends AbstractTableModel {
+      private static final long serialVersionUID = 1L;
+
       public final String[] COLUMN_NAMES = new String[] {
             "Name",
             "Adapter/Library",
@@ -51,10 +58,9 @@ public class DevicesPage extends PagePanel {
       
       MicroscopeModel model_;
       Device devices_[];
-      
+
       public DeviceTable_TableModel(MicroscopeModel model) {
-         devices_ = model.getDevices();
-         model_ = model;
+         setMicroscopeModel(model);
       }
       
       public void setMicroscopeModel(MicroscopeModel mod) {
@@ -68,6 +74,7 @@ public class DevicesPage extends PagePanel {
       public int getColumnCount() {
          return COLUMN_NAMES.length;
       }
+      @Override
       public String getColumnName(int columnIndex) {
          return COLUMN_NAMES[columnIndex];
       }
@@ -80,6 +87,8 @@ public class DevicesPage extends PagePanel {
          else
             return devices_[rowIndex].getDescription();
       }
+
+      @Override
       public void setValueAt(Object value, int row, int col) {
          String newName = (String) value;
          String oldName = devices_[row].getName();
@@ -93,6 +102,7 @@ public class DevicesPage extends PagePanel {
          }
       }
      
+      @Override
       public boolean isCellEditable(int nRow, int nCol) {
          if(nCol == 0)
             return true;
@@ -165,18 +175,18 @@ public class DevicesPage extends PagePanel {
          handleError(MMCoreJ.getG_Keyword_CoreDevice() + " device can't be removed!");
          return;
       }
-      
+      model_.removePeripherals(devName, core_);
       model_.removeDevice(devName);
       rebuildTable();
    }
    
    protected void addDevice() {
-      AddDeviceDlg dlg = new AddDeviceDlg(model_);
+      AddDeviceDlg dlg = new AddDeviceDlg(model_, this);
       dlg.setVisible(true);
       rebuildTable();
    }
    
-   private void rebuildTable() {
+   public void rebuildTable() {
       TableModel tm = deviceTable_.getModel();
       DeviceTable_TableModel tmd;
       if (tm instanceof DeviceTable_TableModel) {
@@ -194,53 +204,44 @@ public class DevicesPage extends PagePanel {
       rebuildTable();
    }
    
-   public boolean enterPage(boolean fromNextPage) {
-      model_.removeDuplicateComPorts();
-      rebuildTable();
-      if (fromNextPage) {
-         try {
-            core_.unloadAllDevices();
-         } catch (Exception e) {
-            handleError(e.getMessage());
-         }
-      }
-      return true;
-   }
+	public boolean enterPage(boolean fromNextPage) {
+		try {
+         // double check that list of device libraries is valid before continuing.
+         CMMCore.getDeviceLibraries();
+			model_.removeDuplicateComPorts();
+			rebuildTable();
+			if (fromNextPage) {
+				try {
+					core_.unloadAllDevices();
+				} catch (Exception e) {
+					handleError(e.getMessage());
+				}
+			}
+			return true;
+		} catch (Exception e2) {
+			ReportingUtils.showError(e2);
+		}
+		return false;
+	}
 
-   public boolean exitPage(boolean toNextPage) {
-      if (toNextPage) {
-         try {
-            StrVector ld = core_.getLoadedDevices();
-            
-            // shutdown the system
-            if (ld.size() > 1)
-               core_.unloadAllDevices();
-            
-            // load com ports
-            Device ports[] = model_.getAvailableSerialPorts();
-            for (int i=0; i<ports.length; i++) {
-               if (model_.isPortInUse(ports[i])) {
-                   core_.loadDevice(ports[i].getName(), ports[i].getLibrary(), ports[i].getAdapterName());
-               }
+    public boolean exitPage(boolean toNextPage) {
+        boolean status = true;
+        if (toNextPage) {
+            Container ancestor = getTopLevelAncestor();
+            Cursor oldc = null;
+            if (null != ancestor){
+               oldc = ancestor.getCursor();
+               Cursor waitc = new Cursor(Cursor.WAIT_CURSOR);
+               ancestor.setCursor(waitc);
             }
-               
-            // load devices
-            Device devs[] = model_.getDevices();
-            for (int i=0; i<devs.length; i++) {
-               if (!devs[i].isCore()) {
-                  //System.out.println("Loading: " + devs[i].getName() + ", " + devs[i].getLibrary() + ", " + devs[i].getAdapterName());
-                  core_.loadDevice(devs[i].getName(), devs[i].getLibrary(), devs[i].getAdapterName());
-               }
+            status = model_.loadModel(core_, true);
+            if (null != ancestor){
+               if( null != oldc)
+                  ancestor.setCursor(oldc);
             }
-         model_.loadDeviceDataFromHardware(core_);
-         model_.removeDuplicateComPorts();
-         } catch (Exception e) {
-            handleException(e);
-            return false;
-         }
-      }
-      return true;
-   }
+        }
+        return status;
+    }
 
    public void loadSettings() {
       

@@ -17,6 +17,7 @@
 //                INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
 //
 // AUTHOR:        Nenad Amodaj, nenad@amodaj.com, 10/26/2005
+//                Nico Stuurman, Oct. 2010
 //
 // CVS:           $Id$
 //
@@ -37,6 +38,39 @@
 #define ERR_PORT_CHANGE_FORBIDDEN    10004
 #define ERR_SET_POSITION_FAILED      10005
 #define ERR_UNKNOWN_SHUTTER_MODE     10006
+#define ERR_UNKNOWN_SHUTTER_ND       10007
+#define ERR_NO_ANSWER                10008
+
+class SutterUtils
+{
+   public:
+      static bool ControllerBusy(MM::Device& device, MM::Core& core, 
+            std::string port, unsigned long answerTimeoutMs);
+      static int GoOnLine(MM::Device& device, MM::Core& core, 
+               std::string port, unsigned long answerTimeoutMs);
+      static int GetControllerType(MM::Device& device, MM::Core& core, 
+            std::string port, unsigned long answerTimeoutMs, std::string& type,
+            std::string& id);
+      static int GetStatus(MM::Device& device, MM::Core& core, 
+            std::string port, unsigned long answerTimeoutMs, 
+            unsigned char* status);
+
+     static int SetCommand(MM::Device& device, MM::Core& core, 
+         const std::string port, const std::vector<unsigned char> command, const std::vector<unsigned char> alternateEcho, 
+         const unsigned long answerTimeoutMs, const bool responseRequired = true, const bool CRexpected = true);
+
+      static int SetCommand(MM::Device& device, MM::Core& core, 
+         const std::string port, const std::vector<unsigned char> command, const std::vector<unsigned char> alternateEcho, 
+         const unsigned long answerTimeoutMs, std::vector<unsigned char>& response, const bool responseRequired = true, const bool CRExpected = true);
+
+      // some commands don't send a \r!!!
+      static int SetCommandNoCR(MM::Device& device, MM::Core& core, 
+         const std::string port, const std::vector<unsigned char> command, const std::vector<unsigned char> alternateEcho, 
+         const unsigned long answerTimeoutMs, std::vector<unsigned char>& response, const bool responseRequired = true);
+
+
+
+};
 
 class Wheel : public CStateDeviceBase<Wheel>
 {
@@ -70,9 +104,11 @@ private:
    std::string name_;
    std::string port_;
    unsigned curPos_;
+   bool open_;
    unsigned speed_;
    bool busy_;
    double answerTimeoutMs_;
+   Wheel& operator=(Wheel& /*rhs*/) {assert(false); return *this;}
 };
 
 class Shutter : public CShutterBase<Shutter>
@@ -81,7 +117,7 @@ public:
    Shutter(const char* name, int id);
    ~Shutter();
 
-   bool Busy() {return false;}
+   bool Busy();
    void GetName(char* pszName) const;
    int Initialize();
    int Shutdown();
@@ -95,7 +131,56 @@ public:
    // ----------------
    int OnState(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
-   int OnDelay(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnMode(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnND(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnControllerID(MM::PropertyBase* pProp, MM::ActionType eAct);
+   // for device discovery:
+   MM::DeviceDetectionStatus DetectDevice(void);
+
+
+private:
+   bool ControllerBusy();
+   bool SetShutterPosition(bool state);
+   bool SetShutterMode(const char* mode);
+   bool SetND(unsigned int nd);
+   int GetControllerType(std::string& type, std::string& id);
+   int GoOnLine();
+
+   bool initialized_;
+   const int id_;
+   std::string name_;
+   std:: string port_;
+   std::string controllerType_;
+   std::string controllerId_;
+   double answerTimeoutMs_;
+   MM::MMTime changedTime_;
+   std::string curMode_;
+   unsigned int nd_;
+   Shutter& operator=(Shutter& /*rhs*/) {assert(false); return *this;}
+};
+
+#ifdef DefineShutterOnTenDashTwo 
+class ShutterOnTenDashTwo : public CShutterBase<ShutterOnTenDashTwo>
+{
+public:
+   ShutterOnTenDashTwo(const char* name, int id);
+   ~ShutterOnTenDashTwo();
+
+   bool Busy();
+   void GetName(char* pszName) const;
+   int Initialize();
+   int Shutdown();
+      
+   // Shutter API
+   int SetOpen(bool open = true);
+   int GetOpen(bool& open);
+   int Fire(double deltaT);
+
+   // action interface
+   // ----------------
+   int OnState(MM::PropertyBase* pProp, MM::ActionType eAct);
+   int OnPort(MM::PropertyBase* pProp, MM::ActionType eAct);
+   //int OnDelay(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnMode(MM::PropertyBase* pProp, MM::ActionType eAct);
 
 private:
@@ -107,8 +192,12 @@ private:
    std::string name_;
    std:: string port_;
    double answerTimeoutMs_;
+   MM::MMTime changedTime_;
    std::string curMode_;
+   ShutterOnTenDashTwo& operator=(ShutterOnTenDashTwo& /*rhs*/) {assert(false); return *this;}
 };
+
+#endif
 
 class DG4Wheel : public CStateDeviceBase<DG4Wheel>
 {

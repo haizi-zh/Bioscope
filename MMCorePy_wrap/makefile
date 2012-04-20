@@ -11,7 +11,7 @@ PYTHON_TARGET:=$(PROJ_NAME).py
 
 OBJ_FILES := _MMCorePy.o
 
-MM_ROOT:=..\..\mmroot
+MM_ROOT:=..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
 IFLAGS:=/I"$(WIN_SDK)\Include" /I"${PYTHON_INCLUDE}" /I"$(PYTHON_INCLUDE)\..\Lib\site-packages\numpy\core\include\numpy"
 PREPROCS:=WIN32 _WINDOWS _USRDLL MMCOREPY_WRAP_EXPORTS _WINDLL _MBCS NDEBUG __WIN32__

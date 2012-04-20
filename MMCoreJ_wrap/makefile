@@ -15,7 +15,7 @@ TARGET := $(TARGET_PATH)\$(TARGET_NAME)
 
 OBJ_FILES := MMCoreJ_wrap.o
 
-MM_ROOT:=..\..\mmroot
+MM_ROOT:=..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
 IFLAGS:=/I"$(WIN_SDK)\Include" /I"${JAVA_HOME}\include" /I"$(JAVA_HOME)\include\win32"
 PREPROCS:=WIN32 _WINDOWS _USRDLL MMCOREJ_WRAP_EXPORTS _WINDLL _MBCS

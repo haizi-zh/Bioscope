@@ -1,44 +1,41 @@
-RM := del
-PROJ_NAME := MMCore
-PREFIX := 
-POSTFIX := 
-EXTENSION := .lib
+RM:=del
+PROJ_NAME:=DemoCamera
+PREFIX:=mmgr_dal_
+POSTFIX:= 
+EXTENSION:=.dll
 TARGET_NAME := $(PREFIX)$(PROJ_NAME)$(POSTFIX)$(EXTENSION)
 ifeq ($(DEBUG), 1)
 	CONFIG := Debug
-	PF := d
 else
 	CONFIG := Release
-	PF := r
 endif
 TARGET_PATH := $(CONFIG)
 TARGET := $(TARGET_PATH)\$(TARGET_NAME)
 
 OBJ_FILES := $(patsubst %.cpp,%.o,$(wildcard *.cpp))
-MM_OBJ_FILES:=DeviceUtils.o ImgBuffer.o
+MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 
 -include $(OBJ_FILES:.o=.d)
 -include $(MM_OBJ_FILES:.o=.d)
 
-MM_ROOT := ..\..\mmroot
-THIRD_PARTY := $(MM_ROOT)\3rdpartypublic
-IDIR := $(THIRD_PARTY)\boost $(THIRD_PARTY)\boost\boost $(THIRD_PARTY)\zlib
+MM_ROOT:=..\..\..\mmroot
+THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
+IDIR := $(THIRD_PARTY)\boost
 IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
-GCC_IFLAGS := $(patsubst %,-I%,$(THIRD_PARTY)/boost $(THIRD_PARTY)/boost/boost $(THIRD_PARTY)/zlib)
-PREPROCS := _WINDOWS _USRDLL MMCOREJ_WRAP_EXPORTS _WINDLL _MBCS WIN32 _LIB MODULE_EXPORTS
+PREPROCS:=WIN32 _WINDOWS _USRDLL _WINDLL _MBCS MODULE_EXPORTS
 ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
-	CFLAGS :=/c /ZI /nologo /W4 /WX- /Od /Oy- /Gm /EHa /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
+	CFLAGS:=/c /ZI /nologo /W4 /WX- /Od /Oy- /Gm /EHa /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
+	LINK_FLAGS:=/INCREMENTAL /NOLOGO /DLL /DEBUG /SUBSYSTEM:WINDOWS /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"$(TARGET_PATH)\$(PROJ_NAME).lib" /MACHINE:X86 /ERRORREPORT:QUEUE
 else
 	PREPROCS += NDEBUG
-	CFLAGS :=/c /Zi /nologo /W4 /WX- /O2 /Oy- /Gm- /EHa /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
+	CFLAGS:=/c /Zi /nologo /W4 /WX- /O2 /Oy- /Gm- /EHa /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
+	LINK_FLAGS:=/INCREMENTAL:NO /NOLOGO /DLL /DEBUG /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"$(TARGET_PATH)\$(PROJ_NAME).lib" /MACHINE:X86 /ERRORREPORT:QUEUE
 endif
 PREPROC_FLAGS := $(patsubst %,/D%,$(PREPROCS))
 CXX := cl
-LINK_FLAGS := /NOLOGO
-LIBPATH := $(THIRD_PARTY)\boost\stage\lib $(THIRD_PARTY)\zlib\bin_Win32
-LIB_FLAGS := $(patsubst %,/LIBPATH:%,$(LIBPATH)) /LIBPATH:"$(WIN_SDK)\Lib" 
-LIBS := zlib.lib
+LIBPATH:=$(THIRD_PARTY)\boost\stage\lib
+LIB_FLAGS := /LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
 
 .PHONY: all clean pre-build main-build post-build
 
@@ -54,13 +51,13 @@ pre-build:
 	$(if $(wildcard $(TARGET_PATH)/*.idb),-@move /Y "$(TARGET_PATH)\*.idb" ./,)
 	$(if $(wildcard $(TARGET_PATH)/*.pdb),-@move /Y "$(TARGET_PATH)\*.pdb" ./,)
 	@echo.
-	
-main-build: $(TARGET)
 
+main-build: $(TARGET)
+	
 $(TARGET): $(OBJ_FILES) $(MM_OBJ_FILES)
 	@echo Building target: $@, configuration: $(CONFIG).
 	@echo Invoking: Linker (link)
-	lib $(LINK_FLAGS) /OUT:$(TARGET) $^ $(LIBS) $(LIB_FLAGS)
+	link $(LINK_FLAGS) /OUT:$(TARGET) $^ $(LIBS) $(LIB_FLAGS)
 	@echo Finished building target: $@
 	@echo.
 	
@@ -72,7 +69,7 @@ $(OBJ_FILES): %.o: %.cpp
 	@echo Finished building: $<, out: $@
 	@echo.
 	
-$(MM_OBJ_FILES): %.o: ../MMDevice/%.cpp
+$(MM_OBJ_FILES): %.o: ../../MMDevice/%.cpp
 	@echo Building file: $<
 	@echo Invoking: C++ Compiler (cl)
 	$(CXX) $(CFLAGS) $(PREPROC_FLAGS) $(IFLAGS) /Fo$@ $<
@@ -85,8 +82,7 @@ post-build:
 	-@copy /Y *.d "$(TARGET_PATH)"
 	$(if $(wildcard $(TARGET_PATH)\*.idb),-@move /Y *.idb "$(TARGET_PATH)\\",)
 	$(if $(wildcard $(TARGET_PATH)\*.pdb),-@move /Y *.pdb "$(TARGET_PATH)\\",)
-	@copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32
-	@copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32\$(PREFIX)$(PROJ_NAME)$(POSTFIX)$(PF)$(EXTENSION)
+	@copy $(TARGET) $(MM_ROOT)\micromanager\bin_Win32
 	@echo.
 	
 clean:

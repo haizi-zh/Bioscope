@@ -90,6 +90,7 @@ clean:
 	$(if $(wildcard $(TARGET_PATH)\*.o), -@$(RM) $(TARGET_PATH)\*.o,)
 	$(if $(wildcard *.cxx), -@$(RM) *.cxx,)
 	-@$(RM) MMCoreJ_wrap.h
+	-@$(RM) MMCoreJ.jar
 	-@$(RM) mmcorej\*.java
 	-@$(RM) mmcorej\*.class
 	$(if $(wildcard $(TARGET_PATH)\*.idb), -@$(RM) $(TARGET_PATH)\*.idb,)

@@ -1,7 +1,7 @@
 *.class
 *.jar
-*/Release/
-*/Debug/
+Release/
+Debug/
 CoreLog*.txt
 *.vcxproj
 *.vcxproj.user

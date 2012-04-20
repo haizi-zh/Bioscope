@@ -12,10 +12,15 @@ UpgradeLog*.XML
 Win32/
 *.lib
 *.obj
+*.o
+*.d
 *.exe
 *.dll
 build/
 *.props
 *UpgradeReport*/
+MMCoreJ_wrap/mmcorej/*.java
+*.idb
+*.pdb
 
 

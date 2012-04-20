@@ -18,7 +18,7 @@ MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 -include $(OBJ_FILES:.o=.d)
 -include $(MM_OBJ_FILES:.o=.d)
 
-MM_ROOT:=..\..\..\mmroot
+MM_ROOT:=..\..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
 IDIR := $(THIRD_PARTY)\boost
 IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"

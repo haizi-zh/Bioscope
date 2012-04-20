@@ -1,5 +1,5 @@
 RM:=del
-PROJ_NAME:=SimpleAutoFocus
+PROJ_NAME:=AAAOTF
 PREFIX:=mmgr_dal_
 POSTFIX:= 
 EXTENSION:=.dll
@@ -20,9 +20,8 @@ MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 
 MM_ROOT:=..\..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
-IDIR:=$(THIRD_PARTY)\boost
-IFLAGS:=$(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
-GCC_IFLAGS:=-I$(THIRD_PARTY)\boost
+IDIR :=
+IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
 PREPROCS:=WIN32 _WINDOWS _USRDLL _WINDLL _MBCS MODULE_EXPORTS
 ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
@@ -35,9 +34,8 @@ else
 endif
 PREPROC_FLAGS := $(patsubst %,/D%,$(PREPROCS))
 CXX := cl
-LIBPATH:=$(THIRD_PARTY)\boost\stage\lib
-LIB_FLAGS:=/LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
-LIBS:=
+LIBPATH:=
+LIB_FLAGS := /LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
 
 .PHONY: all clean pre-build main-build post-build
 
@@ -98,4 +96,3 @@ clean:
 	$(if $(wildcard $(TARGET_PATH)), -@rmdir /S/Q $(TARGET_PATH),)
 	@echo Cleaned.
 	@echo.
-

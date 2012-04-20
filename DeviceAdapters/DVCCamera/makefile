@@ -1,5 +1,5 @@
 RM:=del
-PROJ_NAME:=SimpleAutoFocus
+PROJ_NAME:=DVCCamera
 PREFIX:=mmgr_dal_
 POSTFIX:= 
 EXTENSION:=.dll
@@ -20,9 +20,9 @@ MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 
 MM_ROOT:=..\..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
-IDIR:=$(THIRD_PARTY)\boost
-IFLAGS:=$(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
-GCC_IFLAGS:=-I$(THIRD_PARTY)\boost
+IDIR := include
+IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
+GCC_IFLAGS := -I./include
 PREPROCS:=WIN32 _WINDOWS _USRDLL _WINDLL _MBCS MODULE_EXPORTS
 ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
@@ -35,9 +35,9 @@ else
 endif
 PREPROC_FLAGS := $(patsubst %,/D%,$(PREPROCS))
 CXX := cl
-LIBPATH:=$(THIRD_PARTY)\boost\stage\lib
-LIB_FLAGS:=/LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
-LIBS:=
+LIBPATH:=$(THIRD_PARTY)\boost\stage\lib lib
+LIB_FLAGS := /LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
+LIBS:=dvcAPI.lib
 
 .PHONY: all clean pre-build main-build post-build
 

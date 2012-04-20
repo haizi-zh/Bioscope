@@ -20,7 +20,7 @@ MM_OBJ_FILES:=DeviceUtils.o ImgBuffer.o
 -include $(OBJ_FILES:.o=.d)
 -include $(MM_OBJ_FILES:.o=.d)
 
-MM_ROOT := ..\..\mmroot
+MM_ROOT := ..\..
 THIRD_PARTY := $(MM_ROOT)\3rdpartypublic
 IDIR := $(THIRD_PARTY)\boost $(THIRD_PARTY)\boost\boost $(THIRD_PARTY)\zlib
 IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"

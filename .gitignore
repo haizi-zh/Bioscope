@@ -22,5 +22,8 @@ build/
 MMCoreJ_wrap/mmcorej/*.java
 *.idb
 *.pdb
-
+*.sln
+*.vcproj
+bin_Win32/
+lib_Win32/
 

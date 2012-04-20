@@ -86,4 +86,8 @@ MMCoreJ_wrap/mmcorej/*.java
 bin_Win32/
 lib_Win32/
 DeviceAdapters/DVCCamera/Docs
+*_wrap/*_wrap.cxx
+*_wrap/*_wrap.h
+*_wrap/MMCorePy.py
+Install_Win32/
 

@@ -116,6 +116,9 @@ public:
 	CPI_E761_XYStage();
 	~CPI_E761_XYStage();
 
+	static const char* PropXPos;
+	static const char* PropYPos;
+
 	bool IsInitialized() { return initialized_; }
 
 	// Device API

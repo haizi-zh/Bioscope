@@ -71,6 +71,7 @@ public:
    virtual int IncrementalFocus();
    virtual int GetLastFocusScore(double& score);
    virtual int GetCurrentFocusScore(double& score);
+   virtual int GetCurrentFocusScore(double& score, unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth);
    virtual int AutoSetParameters();
    virtual int GetOffset(double &offset);
    virtual int SetOffset(double offset);
@@ -130,6 +131,8 @@ private:
       return values[(values.size())>>1];
    };
    double SharpnessAtZ(const double zvalue);
+   double SharpnessAtZ(const double zvalue, const unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth);
+
    double DoubleFunctionOfDouble(const double zvalue);
    MM::Core* pCore_;
    double cropFactor_;
@@ -191,6 +194,7 @@ public:
 
    void GetName(char* name) const;
    bool Busy();
+   int OnScore(MM::PropertyBase* pProp, MM::ActionType eAct);
 
    int AcqBeforeFrame();
    int AcqAfterFrame();
@@ -207,6 +211,7 @@ public:
 
 private:
    static const int QUEUE_SIZE = 5;
+   double lastScore_;
    bool initialized_;
    //ImageSharpnessScorer scorer_;
    std::queue<double> scoreQueue_;
@@ -293,6 +298,7 @@ public:
    // Helper functions
    int GetLastFocusScore(double& score);
    int GetCurrentFocusScore(double& score);
+   int GetCurrentFocusScore(double& score, unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth);
 
    // properties
    int OnExposure(MM::PropertyBase* pProp, MM::ActionType eAct);

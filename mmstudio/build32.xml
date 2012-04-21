@@ -7,16 +7,16 @@
 	<property name="InstallerName" value="MMSetup_"/>
 
 	<!-- Specify the system paths -->
-	<property name="InstallRoot" value="../Install_Win32/micro-manager"/>
+	<property name="InstallRoot" value="../Install_Win32/micromanager"/>
 	<property name="NativeRoot" value="../MMCoreJ_wrap"/>
 	<property name="ScriptsRoot" value="../scripts"/>
-	<property name="ScriptsInstall" value="../Install_Win32/micro-manager/scripts"/>
+	<property name="ScriptsInstall" value="../Install_Win32/micromanager/scripts"/>
 	<property name="DriversRoot" value="../drivers"/>
-	<property name="DriversInstall" value="../Install_Win32/micro-manager/drivers"/>
+	<property name="DriversInstall" value="../Install_Win32/micromanager/drivers"/>
 	<property name="AdaptersRoot" value="../DeviceAdapters"/>
 
 	<!-- Do not modify from this point on -->
-	<property name="IJ" value="../../3rdpartypublic/classext/ij.jar"/>
+	<property name="IJ" value="../bin_Win32/ij.jar"/>
 	<property name="beanshell" value="../../3rdpartypublic/classext/bsh-2.0b4.jar"/>
 	<property name="swingx" value="../../3rdpartypublic/classext/swingx-0.9.5.jar"/>
 	<property name="swing_layout" value="../../3rdpartypublic/classext/swing-layout-1.0.4.jar"/>
@@ -69,7 +69,7 @@
 		</copy>
 </target>
 
-	<target name="build" description="Build MMJ_.jar">
+	<target name="build" depends="compile" description="Build MMJ_.jar">
 
 		<copy file="./bin/plugins_mmstudio.config" tofile="./build/plugins.config"  overwrite="true" verbose="true" />
 		<jar jarfile="MMJ_.jar" basedir="build" manifest="./src/MANIFEST.MF" />
@@ -88,7 +88,7 @@
 	</target>
 
 
-	<target name="install" description="Create installation image">
+	<target name="install" depends="build" description="Create installation image">
 		<!-- always clean the device adapters from install image -->
             <delete>
 			<fileset dir="${InstallRoot}">

@@ -90,4 +90,5 @@ DeviceAdapters/DVCCamera/Docs
 *_wrap/*_wrap.h
 *_wrap/MMCorePy.py
 Install_Win32/
-
+.settings/
+*~

@@ -18,20 +18,12 @@
 					<value>true</value>
 				</dictionary>
 				<dictionary>
-					<key>org.eclipse.cdt.make.core.autoBuildTarget</key>
-					<value>all</value>
-				</dictionary>
-				<dictionary>
 					<key>org.eclipse.cdt.make.core.buildArguments</key>
 					<value>DEBUG=1</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.buildCommand</key>
 					<value>make</value>
-				</dictionary>
-				<dictionary>
-					<key>org.eclipse.cdt.make.core.cleanBuildTarget</key>
-					<value>clean</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.contents</key>
@@ -48,10 +40,6 @@
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.enableFullBuild</key>
 					<value>true</value>
-				</dictionary>
-				<dictionary>
-					<key>org.eclipse.cdt.make.core.fullBuildTarget</key>
-					<value>all</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.stopOnError</key>
@@ -76,4 +64,71 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.managedBuildNature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>DeviceBase.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceBase.h</locationURI>
+		</link>
+		<link>
+			<name>DeviceThreads.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceThreads.h</locationURI>
+		</link>
+		<link>
+			<name>DeviceUtils.cpp</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceUtils.cpp</locationURI>
+		</link>
+		<link>
+			<name>DeviceUtils.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceUtils.h</locationURI>
+		</link>
+		<link>
+			<name>ImageMetadata.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImageMetadata.h</locationURI>
+		</link>
+		<link>
+			<name>ImgBuffer.cpp</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImgBuffer.cpp</locationURI>
+		</link>
+		<link>
+			<name>ImgBuffer.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImgBuffer.h</locationURI>
+		</link>
+		<link>
+			<name>MMDevice.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/MMDevice.h</locationURI>
+		</link>
+		<link>
+			<name>MMDeviceConstants.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/MMDeviceConstants.h</locationURI>
+		</link>
+		<link>
+			<name>ModuleInterface.cpp</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ModuleInterface.cpp</locationURI>
+		</link>
+		<link>
+			<name>ModuleInterface.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ModuleInterface.h</locationURI>
+		</link>
+		<link>
+			<name>Property.cpp</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/Property.cpp</locationURI>
+		</link>
+		<link>
+			<name>Property.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/Property.h</locationURI>
+		</link>
+	</linkedResources>
 </projectDescription>

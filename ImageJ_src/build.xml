@@ -28,7 +28,8 @@
     <!-- Build ij.jar. -->
     <jar jarfile="ij.jar" basedir="build"
          manifest="MANIFEST.MF" />
-  	<copy file="ij.jar" todir="../Install_Win32/micromanager"/>
+  	<copy file="ij.jar" todir="../bin_Win32"/>  	
+  	<copy file="ij.jar" todir="../Install_Win32"/>
   </target>
 
 

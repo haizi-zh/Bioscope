@@ -23,16 +23,18 @@ ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
 	CFLAGS:=/c /ZI /nologo /W4 /WX- /Od /Oy- /Gm /EHa /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
 	LINK_FLAGS:=/INCREMENTAL /NOLOGO /DLL /DEBUG /SUBSYSTEM:WINDOWS /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"$(TARGET_PATH)\$(PROJ_NAME).lib" /MACHINE:X86 /ERRORREPORT:QUEUE
-	LIBS:=Iphlpapi.lib mmcored.lib 
+	MM_LIB:=mmcored.lib
 else
 	PREPROCS += NDEBUG
 	CFLAGS :=/c /Zi /nologo /W4 /WX- /O2 /Oy- /Gm- /EHa /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
 	LINK_FLAGS:=/INCREMENTAL:NO /NOLOGO /DLL /DEBUG /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"$(TARGET_PATH)\$(PROJ_NAME).lib" /MACHINE:X86 /ERRORREPORT:QUEUE
-	LIBS:=Iphlpapi.lib mmcorer.lib
+	MM_LIB := mmcorer.lib
 endif
+LIBS := Iphlpapi.lib
 PREPROC_FLAGS := $(patsubst %,/D%,$(PREPROCS))
 CXX := cl
-LIBPATH:=$(MM_ROOT)\micromanager\lib_Win32 $(THIRD_PARTY)\boost\stage\lib
+MM_LIB_PATH := $(MM_ROOT)\micromanager\lib_Win32
+LIBPATH := $(THIRD_PARTY)\boost\stage\lib $(MM_LIB_PATH)
 LIB_FLAGS := /LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
 
 .PHONY: all clean pre-build main-build post-build
@@ -48,8 +50,10 @@ pre-build:
 	$(if $(wildcard $(TARGET_PATH)/*.idb),-@move /Y "$(TARGET_PATH)\*.idb" ./,)
 	$(if $(wildcard $(TARGET_PATH)/*.pdb),-@move /Y "$(TARGET_PATH)\*.pdb" ./,)
 	@echo.
-	
-main-build: $(TARGET) $(JAR_FILE)
+	@echo Making MMCore...
+	$(MAKE) -C ../MMCore
+
+main-build: $(TARGET) $(JAR_FILE) 
 
 $(JAR_FILE) $(PROJ_NAME).cxx: MMCoreJ.i TaggedImage.java
 	@echo swig
@@ -59,12 +63,12 @@ $(JAR_FILE) $(PROJ_NAME).cxx: MMCoreJ.i TaggedImage.java
 	-$(RM) mmcorej\*.class
 	javac -source 5 mmcorej/*.java ../mmstudio/src/org/json/*.java
 	jar cvf $(JAR_FILE) mmcorej/*.class
-	@echo.
+	@echo.	
 
-$(TARGET): $(OBJ_FILES)
+$(TARGET): $(OBJ_FILES) $(MM_LIB_PATH)\$(MM_LIB)
 	@echo Building target: $@, configuration: $(CONFIG).
 	@echo Invoking: Linker (link)
-	link $(LINK_FLAGS) /OUT:$(TARGET) $^ $(LIBS) $(LIB_FLAGS)
+	link $(LINK_FLAGS) /OUT:$(TARGET) $(OBJ_FILES) $(MM_LIB) $(LIBS) $(LIB_FLAGS)
 	@echo Finished building target: $@
 	@echo.
 	

@@ -2003,6 +2003,7 @@ bool CMMCore::getShutterOpen() throw (CMMError)
  */
 void* CMMCore::getImage() const throw (CMMError)
 {
+	CORE_LOG1("> %s\n", "Core::GetImage");
    if (!camera_)
       throw CMMError(getCoreErrorText(MMERR_CameraNotAvailable).c_str(), MMERR_CameraNotAvailable);
    else
@@ -2063,6 +2064,7 @@ void* CMMCore::getImage() const throw (CMMError)
  */
 void* CMMCore::getImage(unsigned channelNr) const throw (CMMError)
 {
+	CORE_LOG1("> %s\n", "Core::GetImage MD");
    if (!camera_)
       throw CMMError(getCoreErrorText(MMERR_CameraNotAvailable).c_str(), MMERR_CameraNotAvailable);
    else

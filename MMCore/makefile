@@ -1,3 +1,4 @@
+
 RM := del
 PROJ_NAME := MMCore
 PREFIX := 
@@ -17,12 +18,11 @@ TARGET := $(TARGET_PATH)\$(TARGET_NAME)
 OBJ_FILES := $(patsubst %.cpp,%.o,$(wildcard *.cpp))
 MM_OBJ_FILES:=DeviceUtils.o ImgBuffer.o
 
--include $(OBJ_FILES:.o=.d)
--include $(MM_OBJ_FILES:.o=.d)
+
 
 MM_ROOT := ..\..
 THIRD_PARTY := $(MM_ROOT)\3rdpartypublic
-IDIR := $(THIRD_PARTY)\boost $(THIRD_PARTY)\boost\boost $(THIRD_PARTY)\zlib
+IDIR := $(THIRD_PARTY)\boost $(THIRD_PARTY)\zlib
 IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
 GCC_IFLAGS := $(patsubst %,-I%,$(THIRD_PARTY)/boost $(THIRD_PARTY)/boost/boost $(THIRD_PARTY)/zlib)
 PREPROCS := _WINDOWS _USRDLL MMCOREJ_WRAP_EXPORTS _WINDLL _MBCS WIN32 _LIB MODULE_EXPORTS
@@ -41,18 +41,20 @@ LIB_FLAGS := $(patsubst %,/LIBPATH:%,$(LIBPATH)) /LIBPATH:"$(WIN_SDK)\Lib"
 LIBS := zlib.lib
 
 .PHONY: all clean pre-build main-build post-build
-
 all: pre-build main-build post-build
+
+-include $(OBJ_FILES:.o=.d)
+-include $(MM_OBJ_FILES:.o=.d)
 
 #@vcvars32.bat
 pre-build:
 	@echo.
-	@echo Pre-building...
+	@echo MMCore: pre-building...
 	$(if $(wildcard $(TARGET_PATH)), , -@mkdir $(subst /,\,$(TARGET_PATH)))
-	$(if $(wildcard $(TARGET_PATH)/*.o),-@move /Y "$(TARGET_PATH)\*.o" ./,)
-	$(if $(wildcard $(TARGET_PATH)/*.d),-@copy /Y "$(TARGET_PATH)\*.d" .,)
-	$(if $(wildcard $(TARGET_PATH)/*.idb),-@move /Y "$(TARGET_PATH)\*.idb" ./,)
-	$(if $(wildcard $(TARGET_PATH)/*.pdb),-@move /Y "$(TARGET_PATH)\*.pdb" ./,)
+	$(if $(wildcard $(TARGET_PATH)/*.o),-move /Y "$(TARGET_PATH)\*.o" ./,)
+	$(if $(wildcard $(TARGET_PATH)/*.d),-copy /Y "$(TARGET_PATH)\*.d" .,)
+	$(if $(wildcard $(TARGET_PATH)/*.idb),-move /Y "$(TARGET_PATH)\*.idb" ./,)
+	$(if $(wildcard $(TARGET_PATH)/*.pdb),-move /Y "$(TARGET_PATH)\*.pdb" ./,)
 	@echo.
 	
 main-build: $(TARGET)
@@ -81,12 +83,13 @@ $(MM_OBJ_FILES): %.o: ../MMDevice/%.cpp
 	@echo.
 	
 post-build:
-	-@move /Y *.o "$(TARGET_PATH)\\"
-	-@copy /Y *.d "$(TARGET_PATH)"
-	$(if $(wildcard $(TARGET_PATH)\*.idb),-@move /Y *.idb "$(TARGET_PATH)\\",)
-	$(if $(wildcard $(TARGET_PATH)\*.pdb),-@move /Y *.pdb "$(TARGET_PATH)\\",)
-	@copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32
-	@copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32\$(PREFIX)$(PROJ_NAME)$(POSTFIX)$(PF)$(EXTENSION)
+	@echo MMCore: post-build:
+	-move /Y *.o "$(TARGET_PATH)\\"
+	-copy /Y *.d "$(TARGET_PATH)"
+	$(if $(wildcard $(TARGET_PATH)\*.idb),-move /Y *.idb "$(TARGET_PATH)\\",)
+	$(if $(wildcard $(TARGET_PATH)\*.pdb),-move /Y *.pdb "$(TARGET_PATH)\\",)
+	copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32
+	copy $(TARGET) $(MM_ROOT)\micromanager\lib_Win32\$(PREFIX)$(PROJ_NAME)$(POSTFIX)$(PF)$(EXTENSION)
 	@echo.
 	
 clean:

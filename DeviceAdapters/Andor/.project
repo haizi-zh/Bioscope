@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>DVCCamera</name>
+	<name>Andor</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -18,16 +18,20 @@
 					<value>true</value>
 				</dictionary>
 				<dictionary>
+					<key>org.eclipse.cdt.make.core.autoBuildTarget</key>
+					<value>all</value>
+				</dictionary>
+				<dictionary>
 					<key>org.eclipse.cdt.make.core.buildArguments</key>
-					<value></value>
+					<value>DEBUG=1</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.buildCommand</key>
 					<value>make</value>
 				</dictionary>
 				<dictionary>
-					<key>org.eclipse.cdt.make.core.buildLocation</key>
-					<value>${workspace_loc:/DVCCamera/VC_Debug}</value>
+					<key>org.eclipse.cdt.make.core.cleanBuildTarget</key>
+					<value>clean</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.contents</key>
@@ -46,12 +50,16 @@
 					<value>true</value>
 				</dictionary>
 				<dictionary>
+					<key>org.eclipse.cdt.make.core.fullBuildTarget</key>
+					<value>all</value>
+				</dictionary>
+				<dictionary>
 					<key>org.eclipse.cdt.make.core.stopOnError</key>
 					<value>true</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.useDefaultBuildCmd</key>
-					<value>true</value>
+					<value>false</value>
 				</dictionary>
 			</arguments>
 		</buildCommand>
@@ -70,9 +78,34 @@
 	</natures>
 	<linkedResources>
 		<link>
+			<name>ATMCD32D.H</name>
+			<type>1</type>
+			<location>C:/Program Files/Andor SOLIS/Drivers/ATMCD32D.H</location>
+		</link>
+		<link>
+			<name>DeviceBase.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceBase.h</locationURI>
+		</link>
+		<link>
+			<name>DeviceThreads.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceThreads.h</locationURI>
+		</link>
+		<link>
 			<name>DeviceUtils.cpp</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceUtils.cpp</locationURI>
+		</link>
+		<link>
+			<name>DeviceUtils.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/DeviceUtils.h</locationURI>
+		</link>
+		<link>
+			<name>ImageMetadata.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImageMetadata.h</locationURI>
 		</link>
 		<link>
 			<name>ImgBuffer.cpp</name>
@@ -80,14 +113,39 @@
 			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImgBuffer.cpp</locationURI>
 		</link>
 		<link>
+			<name>ImgBuffer.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ImgBuffer.h</locationURI>
+		</link>
+		<link>
+			<name>MMDevice.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/MMDevice.h</locationURI>
+		</link>
+		<link>
+			<name>MMDeviceConstants.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/MMDeviceConstants.h</locationURI>
+		</link>
+		<link>
 			<name>ModuleInterface.cpp</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ModuleInterface.cpp</locationURI>
 		</link>
 		<link>
+			<name>ModuleInterface.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/ModuleInterface.h</locationURI>
+		</link>
+		<link>
 			<name>Property.cpp</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/Property.cpp</locationURI>
+		</link>
+		<link>
+			<name>Property.h</name>
+			<type>1</type>
+			<locationURI>PARENT-2-PROJECT_LOC/MMDevice/Property.h</locationURI>
 		</link>
 	</linkedResources>
 </projectDescription>

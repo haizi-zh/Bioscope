@@ -1,5 +1,5 @@
 RM:=del
-PROJ_NAME:=SimpleAutoFocus
+PROJ_NAME:=Andor
 PREFIX:=mmgr_dal_
 POSTFIX:= 
 EXTENSION:=.dll
@@ -17,10 +17,12 @@ MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 
 MM_ROOT:=..\..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
-IDIR:=$(THIRD_PARTY)\boost
-IFLAGS:=$(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
-GCC_IFLAGS:=-I$(THIRD_PARTY)\boost
+IDIR := $(THIRD_PARTY)\boost
+IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include" /I"$(ANDOR_SDK)"
+GCC_IFLAGS := -I$(THIRD_PARTY)\boost -I"$(ANDOR_SDK)"
 PREPROCS:=WIN32 _WINDOWS _USRDLL _WINDLL _MBCS MODULE_EXPORTS
+TEST_FLAG := /c /ZI /nologo /W3 /WX- /Od /Oy- /MD /D "WIN32" /D "_DEBUG" /D "_CONSOLE" /D "_MBCS" /D "MODULE_EXPORTS" /Gm /EHsc /RTC1 /GS /fp:precise /Zc:wchar_t /Zc:forScope /Gd /analyze- /errorReport:queue
+TEST_LINK_FLAGS := /INCREMENTAL /NOLOGO /DEBUG /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /MACHINE:X86 /ERRORREPORT:QUEUE
 ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
 	CFLAGS:=/c /ZI /nologo /W4 /WX- /Od /Oy- /Gm /EHa /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /GR /Gd /wd"4290" /analyze- /errorReport:queue
@@ -32,9 +34,9 @@ else
 endif
 PREPROC_FLAGS := $(patsubst %,/D%,$(PREPROCS))
 CXX := cl
-LIBPATH:=$(THIRD_PARTY)\boost\stage\lib
-LIB_FLAGS:=/LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH))
-LIBS:=
+LIBPATH:=lib
+LIB_FLAGS:=/LIBPATH:"$(WIN_SDK)\Lib" $(patsubst %,/LIBPATH:%,$(LIBPATH)) /LIBPATH:"$(ANDOR_SDK)"
+LIBS:=atmcd32m.lib
 
 .PHONY: all clean pre-build main-build post-build
 
@@ -84,9 +86,18 @@ post-build:
 	-@copy /Y *.d "$(TARGET_PATH)"
 	$(if $(wildcard $(TARGET_PATH)\*.idb),-@move /Y *.idb "$(TARGET_PATH)\\",)
 	$(if $(wildcard $(TARGET_PATH)\*.pdb),-@move /Y *.pdb "$(TARGET_PATH)\\",)
-	@copy $(TARGET) $(MM_ROOT)\micromanager\bin_Win32
+	@copy /Y $(TARGET) $(MM_ROOT)\micromanager\bin_Win32
+	@copy /Y $(TARGET) $(MM_ROOT)\micromanager\Install_Win32\micromanager
 	@echo.
+
+test: testAndor/test.exe
+
+testAndor/test.exe: testAndor/test.o
+	link $(TEST_LINK_FLAGS) /OUT:$@ $^ $(LIBS) $(LIB_FLAGS)
 	
+testAndor/test.o : testAndor/test.cpp
+	$(CXX) $(TEST_FLAG) $(IFLAGS) /Fo$@ $<
+
 clean:
 	@echo Cleaning project...
 	$(if $(wildcard $(TARGET_PATH)\*.lib), -@$(RM) $(TARGET_PATH)\*.lib,)
@@ -96,6 +107,8 @@ clean:
 	$(if $(wildcard $(TARGET_PATH)\*.idb), -@$(RM) $(TARGET_PATH)\*.idb,)
 	$(if $(wildcard $(TARGET_PATH)\*.pdb), -@$(RM) $(TARGET_PATH)\*.pdb,)
 	$(if $(wildcard $(TARGET_PATH)), -@rmdir /S/Q $(TARGET_PATH),)
+	-@del testAndor\*.o
+	-@del testAndor\*.exe
 	@echo Cleaned.
 	@echo.
 

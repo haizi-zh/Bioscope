@@ -14,4 +14,16 @@
 	<natures>
 		<nature>org.eclipse.jdt.core.javanature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>src/TaggedImage.java</name>
+			<type>1</type>
+			<location>D:/Users/Zephyre/Development/mmroot/micromanager/MMCoreJ_wrap/TaggedImage.java</location>
+		</link>
+		<link>
+			<name>src/mmcorej/TaggedImage.java</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/MMCoreJ_wrap/TaggedImage.java</locationURI>
+		</link>
+	</linkedResources>
 </projectDescription>

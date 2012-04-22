@@ -93,11 +93,10 @@ void CorePropertyCollection::Set(const char* propName, const char* value)
 void CorePropertyCollection::Execute(const char* propName, const char* value)
 {
    Set(propName, value); // throws on failure
-   core_->logMessage("CorePropertyCollection::Execute");
+   
    // initialization
    if (strcmp(propName, MM::g_Keyword_CoreInitialize) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::Core");
       if (strcmp(value, "0") == 0)
          core_->unloadAllDevices();
       else if (strcmp(value, "1") == 0)
@@ -107,7 +106,6 @@ void CorePropertyCollection::Execute(const char* propName, const char* value)
    }
    else if (strcmp(propName, MM::g_Keyword_CoreAutoShutter) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::AutoShutter");
       if (strcmp(value, "0") == 0)
          core_->setAutoShutter(false);
       else if (strcmp(value, "1") == 0)
@@ -118,35 +116,29 @@ void CorePropertyCollection::Execute(const char* propName, const char* value)
   // shutter
    else if (strcmp(propName, MM::g_Keyword_CoreShutter) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::Shutter");
       core_->setShutterDevice(value);
    }
    // camera
    else if (strcmp(propName, MM::g_Keyword_CoreCamera) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::Camera");
       core_->setCameraDevice(value);
    }
    // focus
    else if (strcmp(propName, MM::g_Keyword_CoreFocus) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::Focus");
       core_->setFocusDevice(value);
    }
    // xy stage
    else if (strcmp(propName, MM::g_Keyword_CoreXYStage) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::XY");
       core_->setXYStageDevice(value);
    }
    else if (strcmp(propName, MM::g_Keyword_CoreAutoFocus) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::AutoFocus");
       core_->setAutoFocusDevice(value);
    }
    else if (strcmp(propName, MM::g_Keyword_CoreImageProcessor) == 0)
    {
-	   core_->logMessage("CorePropertyCollection::Execute::IP");
       core_->setImageProcessorDevice(value);
    }
    else if (strcmp(propName, MM::g_Keyword_CoreSLM) == 0)

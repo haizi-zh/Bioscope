@@ -14,7 +14,7 @@
 #include "../../MMDevice/DeviceBase.h"
 #include "../../MMDevice/ImgBuffer.h"
 #include "../../MMDevice/DeviceThreads.h"
-#include "dvcAPI.h"
+#include "include/dvcAPI.h"
 
 // error codes
 #define ERR_BUFFER_ALLOCATION_FAILED 101
@@ -101,11 +101,11 @@ private:
 	int OnScanRate(MM::PropertyBase* pProp, MM::ActionType eAct);	
 
 	// a list of available cameras
-	std::map<int, HANDLE> camMap_;
+	std::map<int, void*> camMap_;
 	int currentCam_;
 
 	// Camera information
-	HANDLE hCam_;
+	void* hCam_;
 	std::string camName_;
 	static std::map<int, std::string> camTypeMap_;
 	int camType_;
@@ -154,7 +154,7 @@ private:
 	class AcqSequenceThread : public BaseSequenceThread
 	{
 	public:
-		AcqSequenceThread(DVCCamera* pCam, HANDLE h) : BaseSequenceThread(pCam),
+		AcqSequenceThread(DVCCamera* pCam, void* h) : BaseSequenceThread(pCam),
 			waitTime_(0),
 			imageTimeOut_(0),
 			hCam_(h),
@@ -169,7 +169,7 @@ private:
 	private:
 		int waitTime_;
 		int imageTimeOut_;
-		HANDLE hCam_;
+		void* hCam_;
 		int prevFrameIndex_;
 		DVCCamera* pCam_;
 	};

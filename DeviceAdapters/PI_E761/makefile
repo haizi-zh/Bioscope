@@ -15,14 +15,11 @@ TARGET := $(TARGET_PATH)\$(TARGET_NAME)
 OBJ_FILES := $(patsubst %.cpp,%.o,$(wildcard *.cpp))
 MM_OBJ_FILES := $(patsubst %.cpp,%.o,$(notdir $(wildcard ../../MMDevice/*.cpp)))
 
--include $(OBJ_FILES:.o=.d)
--include $(MM_OBJ_FILES:.o=.d)
-
 MM_ROOT:=..\..\..
 THIRD_PARTY:=$(MM_ROOT)\3rdpartypublic
-IDIR := include
+IDIR := $(THIRD_PARTY)\boost
 IFLAGS := $(patsubst %,/I%,$(IDIR)) /I"$(WIN_SDK)\Include"
-GCC_IFLAGS := -I./include
+GCC_IFLAGS := -I$(THIRD_PARTY)\boost
 PREPROCS:=WIN32 _WINDOWS _USRDLL _WINDLL _MBCS MODULE_EXPORTS
 ifeq ($(DEBUG), 1)
 	PREPROCS += _DEBUG
@@ -42,6 +39,9 @@ LIBS:=E7XX_GCS_DLL.lib
 .PHONY: all clean pre-build main-build post-build
 
 all: pre-build main-build post-build
+
+-include $(OBJ_FILES:.o=.d)
+-include $(MM_OBJ_FILES:.o=.d)
 
 #@vcvars32.bat
 pre-build:
@@ -84,7 +84,8 @@ post-build:
 	-@copy /Y *.d "$(TARGET_PATH)"
 	$(if $(wildcard $(TARGET_PATH)\*.idb),-@move /Y *.idb "$(TARGET_PATH)\\",)
 	$(if $(wildcard $(TARGET_PATH)\*.pdb),-@move /Y *.pdb "$(TARGET_PATH)\\",)
-	@copy $(TARGET) $(MM_ROOT)\micromanager\bin_Win32
+	@copy /Y $(TARGET) $(MM_ROOT)\micromanager\bin_Win32
+	@copy /Y $(TARGET) $(MM_ROOT)\micromanager\Install_Win32\micromanager
 	@echo.
 	
 clean:

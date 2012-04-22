@@ -38,10 +38,10 @@
 								<option id="org.eclipse.cdt.msvc.cl.option.optimization.963431301" name="Optimization" superClass="org.eclipse.cdt.msvc.cl.option.optimization" value="org.eclipse.cdt.msvc.cl.option.optimization.default" valueType="enumerated"/>
 								<option id="org.eclipse.cdt.msvc.cl.option.debugFormat.2687920" name="Debug Information Format" superClass="org.eclipse.cdt.msvc.cl.option.debugFormat" value="org.eclipse.cdt.msvc.cl.option.debugFormat.complete" valueType="enumerated"/>
 								<option id="org.eclipse.cdt.msvc.cl.option.includes.596383706" name="Include Path (/I)" superClass="org.eclipse.cdt.msvc.cl.option.includes" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;.\..\..\..\mmroot\3rdpartypublic\boost&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${WIN_INCLUDE}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;.\..\..\..\mmroot\3rdpartypublic\boost\boost&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;.\..\..\..\mmroot\3rdpartypublic\zlib&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${VC_SDK}/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${WIN_SDK}/Include&quot;"/>
+									<listOptionValue builtIn="false" value="../../../3rdpartypublic/boost"/>
+									<listOptionValue builtIn="false" value="../../../3rdpartypublic/zlib"/>
 								</option>
 								<option id="org.eclipse.cdt.msvc.cl.option.macros.986567730" name="Defines (/D)" superClass="org.eclipse.cdt.msvc.cl.option.macros" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="WIN32"/>
@@ -89,8 +89,6 @@
 					<extension id="org.eclipse.cdt.core.GASErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
 					<extension id="org.eclipse.cdt.core.GLDErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
 					<extension id="org.eclipse.cdt.core.VCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
-					<extension id="org.eclipse.cdt.core.GmakeErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
-					<extension id="org.eclipse.cdt.core.CWDLocator" point="org.eclipse.cdt.core.ErrorParser"/>
 				</extensions>
 			</storageModule>
 			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
@@ -98,7 +96,7 @@
 					<folderInfo id="cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371" name="/" resourcePath="">
 						<toolChain id="org.eclipse.cdt.msvc.toolchain.dll.debug.260024980" name="Microsoft Visual C++" superClass="org.eclipse.cdt.msvc.toolchain.dll.debug">
 							<targetPlatform id="org.eclipse.cdt.msvc.targetPlatform.dll.debug.1009539641" superClass="org.eclipse.cdt.msvc.targetPlatform.dll.debug"/>
-							<builder buildPath="${workspace_loc:/MMCore}" id="cdt.managedbuild.builder.gnu.cross.2026663086" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" superClass="cdt.managedbuild.builder.gnu.cross"/>
+							<builder buildPath="${workspace_loc:/MMCore}" id="cdt.managedbuild.builder.gnu.cross.2026663086" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder"/>
 							<tool command="cl /c" commandLinePattern="${COMMAND} ${FLAGS} ${OUTPUT_FLAG}${OUTPUT_PREFIX}${OUTPUT} ${INPUTS}" id="org.eclipse.cdt.msvc.cl.c.dll.debug.1495839265" name="C Compiler (cl)" superClass="org.eclipse.cdt.msvc.cl.c.dll.debug">
 								<option id="org.eclipse.cdt.msvc.cl.option.optimization.1339861565" name="Optimization" superClass="org.eclipse.cdt.msvc.cl.option.optimization"/>
 								<option id="org.eclipse.cdt.msvc.cl.option.debugFormat.1801107691" name="Debug Information Format" superClass="org.eclipse.cdt.msvc.cl.option.debugFormat"/>
@@ -118,6 +116,10 @@
 									<listOptionValue builtIn="false" value="&quot;${WIN_INCLUDE}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;.\..\..\..\mmroot\3rdpartypublic\boost\boost&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;.\..\..\..\mmroot\3rdpartypublic\zlib&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${VC_SDK}/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${WIN_SDK}/Include&quot;"/>
+									<listOptionValue builtIn="false" value="../../../../mmroot/3rdpartypublic/boost/boost"/>
+									<listOptionValue builtIn="false" value="../../../../mmroot/3rdpartypublic/zlib"/>
 								</option>
 								<inputType id="org.eclipse.cdt.msvc.cl.inputType.1823003617" superClass="org.eclipse.cdt.msvc.cl.inputType"/>
 							</tool>
@@ -145,21 +147,6 @@
 	</storageModule>
 	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
 		<project id="MMCore.cdt.managedbuild.target.gnu.cygwin.so.343000256" name="Shared Library (Gnu on Windows)" projectType="cdt.managedbuild.target.gnu.cygwin.so"/>
-	</storageModule>
-	<storageModule moduleId="scannerConfiguration">
-		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
-		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;cdt.managedbuild.tool.gnu.c.compiler.cygwin.so.debug.1185247480;cdt.managedbuild.tool.gnu.c.compiler.input.cygwin.855579076">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileC"/>
-		</scannerConfigBuildInfo>
-		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;cdt.managedbuild.tool.gnu.cpp.compiler.cygwin.so.release.858636441;cdt.managedbuild.tool.gnu.cpp.compiler.input.cygwin.202612293">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileCPP"/>
-		</scannerConfigBuildInfo>
-		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;cdt.managedbuild.tool.gnu.c.compiler.cygwin.so.release.115573458;cdt.managedbuild.tool.gnu.c.compiler.input.cygwin.987854219">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileC"/>
-		</scannerConfigBuildInfo>
-		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;cdt.managedbuild.tool.gnu.cpp.compiler.cygwin.so.debug.958239990;cdt.managedbuild.tool.gnu.cpp.compiler.input.cygwin.1311329153">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileCPP"/>
-		</scannerConfigBuildInfo>
 	</storageModule>
 	<storageModule moduleId="refreshScope" versionNumber="1">
 		<resource resourceType="PROJECT" workspacePath="/MMCore"/>
@@ -213,5 +200,38 @@
 				<runAllBuilders>true</runAllBuilders>
 			</target>
 		</buildTargets>
+	</storageModule>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		<scannerConfigBuildInfo instanceId="org.eclipse.cdt.msvc.dll.debug.1753967955;org.eclipse.cdt.msvc.dll.debug.1753967955.;org.eclipse.cdt.msvc.cl.c.dll.debug.1334864037;org.eclipse.cdt.msvc.cl.inputType.c.1593470655">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;org.eclipse.cdt.msvc.cl.c.dll.debug.489344258;org.eclipse.cdt.msvc.cl.inputType.c.866649492">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;cdt.managedbuild.tool.gnu.c.compiler.cygwin.so.debug.1185247480;cdt.managedbuild.tool.gnu.c.compiler.input.cygwin.855579076">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="org.eclipse.cdt.msvc.dll.debug.1753967955;org.eclipse.cdt.msvc.dll.debug.1753967955.;org.eclipse.cdt.msvc.cl.dll.debug.474547517;org.eclipse.cdt.msvc.cl.inputType.1458805370">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;org.eclipse.cdt.msvc.cl.c.dll.debug.1495839265;org.eclipse.cdt.msvc.cl.inputType.c.188180894">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;cdt.managedbuild.tool.gnu.cpp.compiler.cygwin.so.release.858636441;cdt.managedbuild.tool.gnu.cpp.compiler.input.cygwin.202612293">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileCPP"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;cdt.managedbuild.tool.gnu.c.compiler.cygwin.so.release.115573458;cdt.managedbuild.tool.gnu.c.compiler.input.cygwin.987854219">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileC"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;org.eclipse.cdt.msvc.cl.dll.debug.1300163950;org.eclipse.cdt.msvc.cl.inputType.301388301">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.debug.448393421;cdt.managedbuild.config.gnu.cygwin.so.debug.448393421.2025423099;cdt.managedbuild.tool.gnu.cpp.compiler.cygwin.so.debug.958239990;cdt.managedbuild.tool.gnu.cpp.compiler.input.cygwin.1311329153">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.managedbuilder.core.GCCWinManagedMakePerProjectProfileCPP"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="cdt.managedbuild.config.gnu.cygwin.so.release.929520891;cdt.managedbuild.config.gnu.cygwin.so.release.929520891.530162371;org.eclipse.cdt.msvc.cl.dll.debug.1360538561;org.eclipse.cdt.msvc.cl.inputType.1823003617">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="org.eclipse.cdt.msw.build.clScannerInfo"/>
+		</scannerConfigBuildInfo>
 	</storageModule>
 </cproject>

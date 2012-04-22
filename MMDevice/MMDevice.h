@@ -788,6 +788,7 @@ namespace MM {
       virtual int IncrementalFocus() = 0;
       virtual int GetLastFocusScore(double& score) = 0;
       virtual int GetCurrentFocusScore(double& score) = 0;
+      virtual int GetCurrentFocusScore(double& score, unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth) = 0;
       virtual int AutoSetParameters() = 0;
       virtual int GetOffset(double &offset) = 0;
       virtual int SetOffset(double offset) = 0;

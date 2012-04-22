@@ -424,9 +424,17 @@ int SimpleAutofocus::GetLastFocusScore(double& score) {
    return 0;
 };
 int SimpleAutofocus::GetCurrentFocusScore(double& score) {
+	GetCoreCallback()->LogMessage(this, "Now get full score. (ZEPHYRE)", false);
    score = latestSharpness_ = SharpnessAtZ(Z());
    return 0;
 };
+
+int SimpleAutofocus::GetCurrentFocusScore(double& score, unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth) {
+	GetCoreCallback()->LogMessage(this, "Now get full score, no new capture. (ZEPHYRE)", false);
+	score = latestSharpness_ = SharpnessAtZ(Z(), pbuf, width, height, bitDepth);
+	return 0;
+}
+
 int SimpleAutofocus::AutoSetParameters() {
    return 0;
 };
@@ -689,7 +697,12 @@ int SimpleAutofocus::OnMean(MM::PropertyBase* pProp, MM::ActionType eAct)
 
 
 
-double SimpleAutofocus::SharpnessAtZ(const double z)
+double SimpleAutofocus::SharpnessAtZ(const double z) {
+	const unsigned char* pI = reinterpret_cast<const unsigned char*>(pCore_->GetImage());
+	return this->SharpnessAtZ(z, pI, 0, 0, 0);
+}
+
+double SimpleAutofocus::SharpnessAtZ(const double z, const unsigned char* pbuf, unsigned w, unsigned h, unsigned dep)
 {
    MMThreadGuard g(busyLock_);
    busy_ = true;
@@ -726,7 +739,8 @@ double SimpleAutofocus::SharpnessAtZ(const double z)
    // copy from MM image to the working buffer
    ImgBuffer image(w0,h0,d0);
    //snap an image
-   const unsigned char* pI = reinterpret_cast<const unsigned char*>(pCore_->GetImage());
+//   const unsigned char* pI = reinterpret_cast<const unsigned char*>(pCore_->GetImage());
+   const unsigned char* pI = pbuf;
    const unsigned short* pSInput = reinterpret_cast<const unsigned short*>(pI);
    int iindex;
    bool legalFormat = false;
@@ -895,6 +909,7 @@ double SimpleAutofocus::SharpnessAtZ(const double z)
       }
       //free(pShort);
    }
+   LogMessage("Sharpness: "+boost::lexical_cast<std::string,float>((float)sharpness));
    busy_ = false;
    latestSharpness_ = sharpness;
    pPoints_->InsertPoint(acquisitionSequenceNumber_++,(float)z,(float)mean_,(float)standardDeviationOverMean_,latestSharpness_,(float)( 0.5*((max1_+max2_)-(min1_+min2_))));

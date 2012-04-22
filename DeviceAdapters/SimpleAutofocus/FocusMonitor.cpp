@@ -55,7 +55,7 @@ const char* g_ON = "ON";
 const char* g_OFF = "OFF";
 
 FocusMonitor::FocusMonitor() : 
-   initialized_(false)
+   initialized_(false), lastScore_(0)
 {
    // call the base class method to set-up default error codes/messages
    InitializeDefaultErrorMessages();
@@ -86,6 +86,14 @@ bool FocusMonitor::Busy()
    return false;
 }
 
+int FocusMonitor::OnScore(MM::PropertyBase* pProp, MM::ActionType eAct)
+{
+  if (eAct == MM::BeforeGet) {
+	  pProp->Set(lastScore_);
+  }
+  return DEVICE_OK;
+}
+
 /**
  * Intializes the module.
  * Required by the MM::Device API.
@@ -113,7 +121,8 @@ int FocusMonitor::Initialize()
    nRet = CreateProperty(g_PropertyDelaySec, "1", MM::Integer, false);
    assert(nRet == DEVICE_OK);
 
-   nRet = CreateProperty(g_PropertyScore, "0.0", MM::Float, true);
+   CPropertyAction *pAct = new CPropertyAction (this, &FocusMonitor::OnScore);
+   nRet = CreateProperty(g_PropertyScore, "0.0", MM::Float, true, pAct);
    assert(nRet == DEVICE_OK);
 
    nRet = CreateProperty(g_PropertyThreshold, "0.0", MM::Float, false);
@@ -157,16 +166,24 @@ int FocusMonitor::Shutdown()
    return DEVICE_OK;
 }
 
-int FocusMonitor::Process(unsigned char* /* buffer */, unsigned /*width*/, unsigned /*height*/, unsigned /* byteDepth*/)
+int FocusMonitor::Process(unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth)
 {
-   if (!IsPropertyEqualTo(g_PropertyOnOff, g_ON))
+	MM::Core*  pcore = GetCoreCallback();
+	pcore->LogMessage(this, "Start to process. (ZEPHYRE)", false);
+   if (!IsPropertyEqualTo(g_PropertyOnOff, g_ON)){
+	   pcore->LogMessage(this, "OFF, now end up. (ZEPHYRE)", false);
       return DEVICE_OK; // processor inactive
+   }
 
    MM::AutoFocus* afDev = GetCoreCallback()->GetAutoFocus(this);
 
    double score(0.0);
-   if (afDev)
-      return afDev->GetCurrentFocusScore(score);
+   if (afDev) {
+      //return afDev->GetCurrentFocusScore(score);
+	   lastScore_ = afDev->GetCurrentFocusScore(score, pbuf, width, height, bitDepth);
+	   return lastScore_;
+   }
+   pcore->LogMessage(this, "No AF device. (ZEPHYRE)", false);
    //else
    return ERR_IP_NO_AF_DEVICE;
 

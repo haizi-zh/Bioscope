@@ -130,6 +130,11 @@ int ThreePointAF::GetCurrentFocusScore(double &score)
    return DEVICE_OK;
 }
 
+int ThreePointAF::GetCurrentFocusScore(double& score, unsigned char* pbuf, unsigned width, unsigned height, unsigned bitDepth) {
+	score = score_;
+	return DEVICE_OK;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Properties
